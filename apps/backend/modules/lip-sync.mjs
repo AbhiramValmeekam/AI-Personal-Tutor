@@ -99,8 +99,11 @@ const lipSync = async (response, language = "english") => {
         if (message.audio && message.audioFormat && message._tempAudioFile) {
           const tempFile = message._tempAudioFile;
           if (fs.existsSync(tempFile)) {
+            console.log(`[LipSync] Processing temp audio file: ${tempFile}`);
             await getPhonemes({ message: index, language, audioFile: tempFile });
-            message.lipsync = await readJsonTranscript({ fileName: jsonFileName });
+            const tempJsonFile = tempFile.replace(/\.(mp3|wav)$/, '.json');
+            message.lipsync = await readJsonTranscript({ fileName: tempJsonFile });
+            console.log(`[LipSync] ✅ Lip sync data loaded for message ${index}:`, message.lipsync ? `${message.lipsync.mouthCues?.length || 0} cues` : 'no data');
             setTimeout(() => { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); }, 5000);
           }
         } else {

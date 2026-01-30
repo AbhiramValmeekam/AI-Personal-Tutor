@@ -138,6 +138,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('language', selectedLanguage || 'english'); // Send selected language
 
       // Use the same backend URL as the speech hook
       const response = await fetch(`http://localhost:3002/api/documents/upload`, {

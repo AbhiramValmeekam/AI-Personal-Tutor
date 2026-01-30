@@ -517,6 +517,12 @@ app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
       throw new Error('Could not extract text from the document. The file may be empty or corrupted.');
     }
 
+    // Get language from request body or query (default to english)
+    // Multer should parse form fields, but we also check query as fallback
+    const language = req.body.language || req.query.language || 'english';
+    console.log(`Document summary requested in language: ${language}`);
+    console.log(`Request body language: ${req.body.language}, Query language: ${req.query.language}`);
+
     // Use Gemini to process and summarize the document
     console.log("Initializing Gemini API...");
     const { GoogleGenerativeAI } = await import("@google/generative-ai");
@@ -528,6 +534,20 @@ app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
       ? documentText.substring(0, 50000) + "\n\n[Document truncated due to length...]"
       : documentText;
 
+    // Create language-specific instruction
+    const lang = language.toLowerCase();
+    let languageInstruction = '';
+    
+    if (lang === 'english' || lang === 'en') {
+      languageInstruction = 'IMPORTANT: Please provide the summary in English language.';
+    } else if (lang === 'hindi' || lang === 'hi') {
+      languageInstruction = 'IMPORTANT: कृपया सारांश हिंदी भाषा में प्रदान करें। (Please provide the summary in Hindi language.)';
+    } else if (lang === 'telugu' || lang === 'te') {
+      languageInstruction = 'IMPORTANT: దయచేసి సారాంశాన్ని తెలుగు భాషలో అందించండి। (Please provide the summary in Telugu language.)';
+    } else {
+      languageInstruction = `IMPORTANT: Please provide the summary in ${language} language.`;
+    }
+
     const prompt = `Please analyze and summarize the following document. Provide a comprehensive summary that includes:
 1. Main topic and purpose
 2. Key points and important information
@@ -537,6 +557,8 @@ app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
 Document name: ${fileName}
 Document content:
 ${truncatedText}
+
+${languageInstruction}
 
 Please provide a clear, well-structured summary in 2-4 paragraphs.`;
 

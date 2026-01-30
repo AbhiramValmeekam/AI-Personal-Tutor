@@ -1,26 +1,43 @@
 import { execCommand } from "../utils/files.mjs";
 import fs from "fs";
+import { join, dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 
-const getPhonemes = async ({ message, language = "english" }) => {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const backendDir = resolve(__dirname, "..");
+
+const getPhonemes = async ({ message, language = "english", audioFile = null }) => {
   try {
     const time = new Date().getTime();
-    console.log(`Starting lip sync conversion for message ${message} (language: ${language})`);
+    console.log(`[Rhubarb] Starting lip sync conversion for message ${message} (language: ${language})`);
     
     // Determine input audio file (MP3 or WAV)
-    const mp3File = `audios/message_${message}.mp3`;
-    const wavFile = `audios/message_${message}.wav`;
-    const jsonFile = `audios/message_${message}.json`;
+    let mp3File, wavFile, jsonFile;
+    
+    if (audioFile) {
+      // If audioFile is provided (for temp files from streaming TTS)
+      console.log(`[Rhubarb] Using provided audio file: ${audioFile}`);
+      mp3File = audioFile;
+      wavFile = audioFile.replace(/\.mp3$/, '.wav');
+      jsonFile = audioFile.replace(/\.(mp3|wav)$/, '.json');
+    } else {
+      // Standard message files
+      mp3File = `audios/message_${message}.mp3`;
+      wavFile = `audios/message_${message}.wav`;
+      jsonFile = `audios/message_${message}.json`;
+    }
     
     // Check which audio file exists
     let inputAudioFile = null;
     if (fs.existsSync(wavFile)) {
       inputAudioFile = wavFile;
-      console.log(`Using existing WAV file: ${wavFile}`);
+      console.log(`[Rhubarb] Using existing WAV file: ${wavFile}`);
     } else if (fs.existsSync(mp3File)) {
       inputAudioFile = mp3File;
-      console.log(`Using MP3 file, will convert to WAV: ${mp3File}`);
+      console.log(`[Rhubarb] Using MP3 file, will convert to WAV: ${mp3File}`);
     } else {
-      console.warn(`No audio file found for message ${message} (checked ${mp3File} and ${wavFile})`);
+      console.warn(`[Rhubarb] No audio file found for message ${message} (checked ${mp3File} and ${wavFile})`);
       // Create placeholder lip sync data
       const placeholderData = {
         mouthCues: [
@@ -53,20 +70,28 @@ const getPhonemes = async ({ message, language = "english" }) => {
     // Convert MP3 to WAV if needed (Rhubarb requires WAV format)
     // Use standard sample rate (16000 Hz) for compatibility
     // Ensure mono channel for optimal lip sync detection
-    if (inputAudioFile === mp3File) {
+    let finalWavFile = wavFile;
+    
+    if (inputAudioFile.endsWith('.mp3')) {
       try {
+        console.log(`[Rhubarb] Converting MP3 to WAV: ${inputAudioFile} -> ${wavFile}`);
         // Convert MP3 to WAV with standard settings
+        const mp3Path = resolve(inputAudioFile);
+        const wavPath = resolve(wavFile);
         await execCommand({
-          command: `ffmpeg -y -i "${mp3File}" -ar 16000 -ac 1 "${wavFile}"`
+          command: `ffmpeg -y -i "${mp3Path}" -ar 16000 -ac 1 "${wavPath}"`
         });
-        console.log(`MP3 to WAV conversion done in ${new Date().getTime() - time}ms`);
+        console.log(`[Rhubarb] ✅ MP3 to WAV conversion done in ${new Date().getTime() - time}ms`);
         
         // Verify WAV file was created
         if (!fs.existsSync(wavFile)) {
           throw new Error(`WAV file was not created: ${wavFile}`);
         }
+        
+        // Use the converted WAV file
+        finalWavFile = wavFile;
       } catch (conversionError) {
-        console.error(`FFmpeg conversion failed:`, conversionError.message);
+        console.error(`[Rhubarb] ❌ FFmpeg conversion failed:`, conversionError.message);
         // Create placeholder if conversion fails
         const placeholderData = {
           mouthCues: [
@@ -78,11 +103,14 @@ const getPhonemes = async ({ message, language = "english" }) => {
         fs.writeFileSync(jsonFile, JSON.stringify(placeholderData));
         return;
       }
+    } else if (inputAudioFile.endsWith('.wav')) {
+      finalWavFile = inputAudioFile;
     }
     
     // Ensure WAV file exists and is readable
-    if (!fs.existsSync(wavFile)) {
-      console.error(`WAV file does not exist: ${wavFile}`);
+    
+    if (!fs.existsSync(finalWavFile)) {
+      console.error(`[Rhubarb] ❌ WAV file does not exist: ${finalWavFile}`);
       const placeholderData = {
         mouthCues: [
           { start: 0.0, end: 0.5, value: "A" },
@@ -94,9 +122,9 @@ const getPhonemes = async ({ message, language = "english" }) => {
       return;
     }
     
-    const wavStats = fs.statSync(wavFile);
+    const wavStats = fs.statSync(finalWavFile);
     if (wavStats.size === 0) {
-      console.error(`WAV file is empty: ${wavFile}`);
+      console.error(`[Rhubarb] ❌ WAV file is empty: ${finalWavFile}`);
       const placeholderData = {
         mouthCues: [
           { start: 0.0, end: 0.5, value: "A" },
@@ -108,13 +136,20 @@ const getPhonemes = async ({ message, language = "english" }) => {
       return;
     }
     
-    console.log(`WAV file ready: ${wavFile} (${wavStats.size} bytes)`);
+    console.log(`[Rhubarb] ✅ WAV file ready: ${finalWavFile} (${wavStats.size} bytes)`);
     
     // Check if rhubarb is available (Windows uses .exe, Unix uses no extension)
-    // Based on reference: https://github.com/asanchezyali/talking-avatar-with-ai
-    const rhubarbPath = process.platform === "win32" ? "bin\\rhubarb.exe" : "./bin/rhubarb";
+    // Use absolute path to ensure it's found
+    const rhubarbPath = process.platform === "win32" 
+      ? join(backendDir, "bin", "rhubarb.exe")
+      : join(backendDir, "bin", "rhubarb");
+    
+    console.log(`[Rhubarb] Checking Rhubarb at: ${rhubarbPath}`);
+    console.log(`[Rhubarb] Rhubarb exists: ${fs.existsSync(rhubarbPath)}`);
+    
     try {
-      await execCommand({ command: `${rhubarbPath} --help` });
+      await execCommand({ command: `"${rhubarbPath}" --help` });
+      console.log(`[Rhubarb] ✅ Rhubarb is available`);
     } catch (rhubarbError) {
       console.warn("Rhubarb not found, creating placeholder lip sync data");
       // Create a simple placeholder JSON file with correct format
@@ -154,32 +189,34 @@ const getPhonemes = async ({ message, language = "english" }) => {
     
     // Try presets mode first
     try {
-      const rhubarbCommandPresets = process.platform === "win32"
-        ? `"${rhubarbPath}" -f json -o "${jsonFile}" "${wavFile}" -r presets`
-        : `${rhubarbPath} -f json -o "${jsonFile}" "${wavFile}" -r presets`;
+      const wavPath = resolve(finalWavFile);
+      const jsonPath = resolve(jsonFile);
+      const rhubarbCommandPresets = `"${rhubarbPath}" -f json -o "${jsonPath}" "${wavPath}" -r presets`;
+      console.log(`[Rhubarb] Running command: ${rhubarbCommandPresets}`);
       
       await execCommand({
         command: rhubarbCommandPresets,
       });
       rhubarbSuccess = true;
-      console.log(`Lip sync done with presets mode for ${language} in ${new Date().getTime() - time}ms`);
+      console.log(`[Rhubarb] ✅ Lip sync done with presets mode for ${language} in ${new Date().getTime() - time}ms`);
     } catch (presetsError) {
-      console.warn(`Presets mode failed, trying phonetic mode:`, presetsError.message);
+      console.warn(`[Rhubarb] Presets mode failed, trying phonetic mode:`, presetsError.message);
       rhubarbError = presetsError;
       
       // Fallback to phonetic mode
       try {
-        const rhubarbCommandPhonetic = process.platform === "win32"
-          ? `"${rhubarbPath}" -f json -o "${jsonFile}" "${wavFile}" -r phonetic`
-          : `${rhubarbPath} -f json -o "${jsonFile}" "${wavFile}" -r phonetic`;
+        const wavPath = resolve(finalWavFile);
+        const jsonPath = resolve(jsonFile);
+        const rhubarbCommandPhonetic = `"${rhubarbPath}" -f json -o "${jsonPath}" "${wavPath}" -r phonetic`;
+        console.log(`[Rhubarb] Running phonetic command: ${rhubarbCommandPhonetic}`);
         
         await execCommand({
           command: rhubarbCommandPhonetic,
         });
         rhubarbSuccess = true;
-        console.log(`Lip sync done with phonetic mode for ${language} in ${new Date().getTime() - time}ms`);
+        console.log(`[Rhubarb] ✅ Lip sync done with phonetic mode for ${language} in ${new Date().getTime() - time}ms`);
       } catch (phoneticError) {
-        console.error(`Both presets and phonetic modes failed:`, phoneticError.message);
+        console.error(`[Rhubarb] ❌ Both presets and phonetic modes failed:`, phoneticError.message);
         throw phoneticError;
       }
     }

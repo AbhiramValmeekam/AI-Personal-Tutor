@@ -202,11 +202,15 @@ export function Avatar(props) {
     const appliedMorphTargets = [];
     if (message && lipsync && audio) {
       try {
-        // Check if audio is ready and playing
+        // Check if audio is ready and hasn't ended
+        // Continue lip sync even if paused (in case it resumes) until audio actually ends
         const isAudioReady = audio.readyState >= 2;
-        const isAudioPlaying = !audio.paused && !audio.ended;
+        const hasAudioEnded = audio.ended;
+        const audioDuration = audio.duration || 0;
         
-        if (isAudioReady && isAudioPlaying) {
+        // Process lip sync as long as audio exists, is ready, and hasn't ended
+        // This ensures lip sync continues throughout the entire audio duration
+        if (isAudioReady && !hasAudioEnded) {
           const currentAudioTime = audio.currentTime;
           
           // Only process if audio time is valid and positive
@@ -240,14 +244,23 @@ export function Avatar(props) {
                 }
               }
               
-              // If no active cues but we're near the end, hold the last viseme
+              // If no active cues but audio is still playing (not ended), continue with last viseme
+              // This ensures lip sync continues until audio fully ends, not just until last cue
               if (appliedMorphTargets.length === 0 && lipsync.mouthCues.length > 0) {
                 const lastCue = lipsync.mouthCues[lipsync.mouthCues.length - 1];
-                if (currentAudioTime > lastCue.end && currentAudioTime < lastCue.end + 0.3) {
+                // Continue lip sync from last cue until audio ends
+                // Use audio duration or last cue end + buffer, whichever is larger
+                const maxLipSyncTime = Math.max(lastCue.end, audioDuration - 0.1);
+                
+                if (currentAudioTime > lastCue.end && currentAudioTime < maxLipSyncTime) {
                   const viseme = visemesMapping[lastCue.value];
                   if (viseme) {
-                    lerpMorphTarget(viseme, 0.4, 0.2);
+                    // Gradually fade out the last viseme as we approach audio end
+                    const fadeProgress = 1 - ((currentAudioTime - lastCue.end) / (maxLipSyncTime - lastCue.end));
+                    const visemeStrength = Math.max(0.2, fadeProgress * 0.6);
+                    lerpMorphTarget(viseme, visemeStrength, 0.2);
                     appliedMorphTargets.push(viseme);
+                    activeViseme = viseme;
                   }
                 }
               }
@@ -267,39 +280,102 @@ export function Avatar(props) {
                   }
                 }
               }
+              
+              // Extend last cue for old format too
+              if (appliedMorphTargets.length === 0 && lipsync.length > 0) {
+                const lastCue = lipsync[lipsync.length - 1];
+                const maxLipSyncTime = Math.max(lastCue.end, audioDuration - 0.1);
+                if (currentAudioTime > lastCue.end && currentAudioTime < maxLipSyncTime) {
+                  const viseme = visemesMapping[lastCue.value];
+                  if (viseme) {
+                    const fadeProgress = 1 - ((currentAudioTime - lastCue.end) / (maxLipSyncTime - lastCue.end));
+                    lerpMorphTarget(viseme, Math.max(0.2, fadeProgress * 0.6), 0.2);
+                    appliedMorphTargets.push(viseme);
+                    activeViseme = viseme;
+                  }
+                }
+              }
             }
             
-            // If no active cue found but audio is playing, use a neutral viseme
-            // This prevents the mouth from staying in the last position
-            if (!activeViseme && currentAudioTime > 0 && appliedMorphTargets.length === 0) {
-              // Apply a subtle closed mouth position when between cues
-              lerpMorphTarget("viseme_PP", 0.2, 0.2);
+            // If no active cue found but audio is still active (not ended), maintain last viseme or use neutral
+            // This prevents the mouth from closing between cues or after the last cue
+            if (!activeViseme && currentAudioTime > 0 && currentAudioTime < audioDuration && appliedMorphTargets.length === 0) {
+              // Try to find the last cue that was active (for smooth continuation)
+              if (lipsync.mouthCues && Array.isArray(lipsync.mouthCues) && lipsync.mouthCues.length > 0) {
+                // Find the most recent cue that has passed
+                let lastPassedCue = null;
+                for (let i = lipsync.mouthCues.length - 1; i >= 0; i--) {
+                  const cue = lipsync.mouthCues[i];
+                  if (cue && currentAudioTime >= cue.start) {
+                    lastPassedCue = cue;
+                    break;
+                  }
+                }
+                
+                if (lastPassedCue) {
+                  // Continue with the last passed cue's viseme
+                  const viseme = visemesMapping[lastPassedCue.value];
+                  if (viseme) {
+                    // Gradually reduce intensity as we move away from the cue, but keep it active
+                    const timeSinceCueEnd = Math.max(0, currentAudioTime - lastPassedCue.end);
+                    const fadeAmount = Math.max(0.4, 1 - (timeSinceCueEnd * 1.5)); // Fade slowly over time
+                    lerpMorphTarget(viseme, fadeAmount, 0.2);
+                    appliedMorphTargets.push(viseme);
+                    activeViseme = viseme;
+                  }
+                } else {
+                  // No cue has started yet, use neutral closed mouth
+                  lerpMorphTarget("viseme_PP", 0.2, 0.2);
+                  appliedMorphTargets.push("viseme_PP");
+                }
+              } else {
+                // No cues available, use neutral closed mouth
+                lerpMorphTarget("viseme_PP", 0.2, 0.2);
+                appliedMorphTargets.push("viseme_PP");
+              }
             }
           }
         }
       } catch (error) {
         console.error("Error processing lipsync:", error);
-        // Fallback: reset all visemes
+        // Fallback: reset all visemes only if audio has ended
+        if (!audio || audio.ended) {
+          Object.values(visemesMapping).forEach((viseme) => {
+            lerpMorphTarget(viseme, 0, 0.1);
+          });
+        }
+      }
+    } else {
+      // Only reset all visemes when audio has ended or no message/lipsync
+      const shouldReset = !message || !lipsync || !audio || audio.ended;
+      if (shouldReset) {
         Object.values(visemesMapping).forEach((viseme) => {
           lerpMorphTarget(viseme, 0, 0.1);
         });
       }
-    } else {
-      // Reset all visemes when not processing lipsync
-      Object.values(visemesMapping).forEach((viseme) => {
-        lerpMorphTarget(viseme, 0, 0.1);
-      });
     }
 
-    // Reset unused visemes - critical for smooth transitions throughout conversation
-    // This ensures visemes don't stick and transitions are smooth
-    Object.values(visemesMapping).forEach((viseme) => {
-      if (!appliedMorphTargets.includes(viseme)) {
-        // Reset visemes that aren't currently active
-        // Use slower reset for smoother, more natural transitions
-        lerpMorphTarget(viseme, 0, 0.15);
-      }
-    });
+    // Reset unused visemes - but only if audio has ended
+    // This ensures visemes stay active throughout the entire audio playback
+    const shouldResetUnused = !audio || audio.ended || !message || !lipsync;
+    if (shouldResetUnused) {
+      Object.values(visemesMapping).forEach((viseme) => {
+        if (!appliedMorphTargets.includes(viseme)) {
+          // Reset visemes that aren't currently active
+          // Use slower reset for smoother, more natural transitions
+          lerpMorphTarget(viseme, 0, 0.15);
+        }
+      });
+    } else {
+      // While audio is playing, only reset visemes that aren't in the applied list
+      // This maintains smooth transitions without closing the mouth prematurely
+      Object.values(visemesMapping).forEach((viseme) => {
+        if (!appliedMorphTargets.includes(viseme)) {
+          // Gradually reset unused visemes, but keep them active longer
+          lerpMorphTarget(viseme, 0, 0.05); // Very slow reset to prevent premature closing
+        }
+      });
+    }
   });
 
   useControls("FacialExpressions", {
