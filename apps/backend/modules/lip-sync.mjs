@@ -3,6 +3,7 @@ import { getPhonemes } from "./rhubarbLipSync.mjs";
 import { readJsonTranscript, audioFileToBase64 } from "../utils/files.mjs";
 import { generateTTSBase64 } from "./streaming-tts.mjs";
 import fs from "fs";
+import { resolve, join } from "path";
 
 const MAX_RETRIES = 10;
 const RETRY_DELAY = 0;
@@ -46,10 +47,12 @@ const lipSync = async (response, language = "english") => {
 
   console.log(`[LipSync] Starting lip sync for ${messages.length} messages in ${language}`);
 
+  const backendDir = process.cwd();
+  
   await Promise.all(
     messages.map(async (message, index) => {
-      const fileName = `audios/message_${index}.mp3`;
-      const wavFileName = `audios/message_${index}.wav`;
+      const fileName = resolve(backendDir, `audios/message_${index}.mp3`);
+      const wavFileName = resolve(backendDir, `audios/message_${index}.wav`);
 
       console.log(`[LipSync] Processing message ${index} in ${language}`);
 
@@ -71,7 +74,7 @@ const lipSync = async (response, language = "english") => {
           message.audio = base64Audio;
           message.audioFormat = "mp3";
 
-          const tempFile = `audios/message_${index}_temp.mp3`;
+          const tempFile = resolve(backendDir, `audios/message_${index}_temp.mp3`);
           fs.writeFileSync(tempFile, Buffer.from(base64Audio, 'base64'));
           message._tempAudioFile = tempFile;
         } else {
@@ -91,9 +94,9 @@ const lipSync = async (response, language = "english") => {
 
   await Promise.all(
     messages.map(async (message, index) => {
-      const fileName = `audios/message_${index}.mp3`;
-      const wavFileName = `audios/message_${index}.wav`;
-      const jsonFileName = `audios/message_${index}.json`;
+      const fileName = resolve(backendDir, `audios/message_${index}.mp3`);
+      const wavFileName = resolve(backendDir, `audios/message_${index}.wav`);
+      const jsonFileName = resolve(backendDir, `audios/message_${index}.json`);
 
       try {
         if (message.audio && message.audioFormat && message._tempAudioFile) {
@@ -101,9 +104,15 @@ const lipSync = async (response, language = "english") => {
           if (fs.existsSync(tempFile)) {
             console.log(`[LipSync] Processing temp audio file: ${tempFile}`);
             await getPhonemes({ message: index, language, audioFile: tempFile });
-            const tempJsonFile = tempFile.replace(/\.(mp3|wav)$/, '.json');
-            message.lipsync = await readJsonTranscript({ fileName: tempJsonFile });
-            console.log(`[LipSync] ✅ Lip sync data loaded for message ${index}:`, message.lipsync ? `${message.lipsync.mouthCues?.length || 0} cues` : 'no data');
+            const tempJsonFile = resolve(tempFile.replace(/\.(mp3|wav)$/, '.json'));
+            console.log(`[LipSync] Reading JSON from: ${tempJsonFile}`);
+            if (fs.existsSync(tempJsonFile)) {
+              message.lipsync = await readJsonTranscript({ fileName: tempJsonFile });
+              console.log(`[LipSync] ✅ Lip sync data loaded for message ${index}:`, message.lipsync ? `${message.lipsync.mouthCues?.length || 0} cues` : 'no data');
+            } else {
+              console.error(`[LipSync] ❌ JSON file not found: ${tempJsonFile}`);
+              message.lipsync = { mouthCues: [{ start: 0, end: 1, value: "X" }] };
+            }
             setTimeout(() => { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); }, 5000);
           }
         } else {
@@ -117,12 +126,20 @@ const lipSync = async (response, language = "english") => {
           }
 
           await getPhonemes({ message: index, language });
-          message.lipsync = await readJsonTranscript({ fileName: jsonFileName });
+          console.log(`[LipSync] Reading JSON from: ${jsonFileName}`);
+          if (fs.existsSync(jsonFileName)) {
+            message.lipsync = await readJsonTranscript({ fileName: jsonFileName });
+            console.log(`[LipSync] ✅ Lip sync data loaded for message ${index}:`, message.lipsync ? `${message.lipsync.mouthCues?.length || 0} cues` : 'no data');
+          } else {
+            console.error(`[LipSync] ❌ JSON file not found: ${jsonFileName}`);
+            message.lipsync = { mouthCues: [{ start: 0, end: 1, value: "X" }] };
+          }
           message.audio = await audioFileToBase64({ fileName: audioFile });
           message.audioFormat = audioFormat;
         }
       } catch (error) {
-        console.error(`Error processing phonemes for message ${index}:`, error);
+        console.error(`[LipSync] ❌ Error processing phonemes for message ${index}:`, error);
+        console.error(`[LipSync] Error stack:`, error.stack);
         if (!message.lipsync) message.lipsync = { mouthCues: [{ start: 0, end: 1, value: "X" }] };
       }
     })

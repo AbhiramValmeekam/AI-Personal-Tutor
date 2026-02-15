@@ -12,20 +12,21 @@ const getPhonemes = async ({ message, language = "english", audioFile = null }) 
     const time = new Date().getTime();
     console.log(`[Rhubarb] Starting lip sync conversion for message ${message} (language: ${language})`);
     
-    // Determine input audio file (MP3 or WAV)
+    // Determine input audio file (MP3 or WAV) - use absolute paths
     let mp3File, wavFile, jsonFile;
     
     if (audioFile) {
       // If audioFile is provided (for temp files from streaming TTS)
       console.log(`[Rhubarb] Using provided audio file: ${audioFile}`);
-      mp3File = audioFile;
-      wavFile = audioFile.replace(/\.mp3$/, '.wav');
-      jsonFile = audioFile.replace(/\.(mp3|wav)$/, '.json');
+      // Resolve to absolute path
+      mp3File = resolve(audioFile);
+      wavFile = resolve(audioFile.replace(/\.mp3$/, '.wav'));
+      jsonFile = resolve(audioFile.replace(/\.(mp3|wav)$/, '.json'));
     } else {
-      // Standard message files
-      mp3File = `audios/message_${message}.mp3`;
-      wavFile = `audios/message_${message}.wav`;
-      jsonFile = `audios/message_${message}.json`;
+      // Standard message files - resolve relative to backend directory
+      mp3File = resolve(backendDir, `audios/message_${message}.mp3`);
+      wavFile = resolve(backendDir, `audios/message_${message}.wav`);
+      jsonFile = resolve(backendDir, `audios/message_${message}.json`);
     }
     
     // Check which audio file exists
@@ -261,7 +262,7 @@ const getPhonemes = async ({ message, language = "english", audioFile = null }) 
     console.error(`Error stack:`, error.stack);
     // Create a simple placeholder JSON file as fallback with correct format
     try {
-      const jsonFile = `audios/message_${message}.json`;
+      const jsonFile = resolve(backendDir, `audios/message_${message}.json`);
       const placeholderData = {
         mouthCues: [
           { start: 0.0, end: 0.5, value: "A" },

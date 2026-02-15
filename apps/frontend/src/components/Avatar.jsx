@@ -235,7 +235,8 @@ export function Avatar(props) {
                       const easedProgress = progress < 0.5 
                         ? 2 * progress * progress 
                         : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-                      lerpMorphTarget(viseme, easedProgress, 0.3);
+                      // Slower transition speed for more natural lip movement (reduced from 0.3 to 0.12)
+                      lerpMorphTarget(viseme, easedProgress, 0.12);
                     } else {
                       console.warn(`Viseme mapping not found for: ${mouthCue.value}`);
                     }
@@ -258,7 +259,8 @@ export function Avatar(props) {
                     // Gradually fade out the last viseme as we approach audio end
                     const fadeProgress = 1 - ((currentAudioTime - lastCue.end) / (maxLipSyncTime - lastCue.end));
                     const visemeStrength = Math.max(0.2, fadeProgress * 0.6);
-                    lerpMorphTarget(viseme, visemeStrength, 0.2);
+                    // Slower transition speed (reduced from 0.2 to 0.1)
+                    lerpMorphTarget(viseme, visemeStrength, 0.1);
                     appliedMorphTargets.push(viseme);
                     activeViseme = viseme;
                   }
@@ -274,7 +276,8 @@ export function Avatar(props) {
                     if (viseme) {
                       activeViseme = viseme;
                       appliedMorphTargets.push(viseme);
-                      lerpMorphTarget(viseme, 1, 0.7);
+                      // Slower transition speed for old format (reduced from 0.7 to 0.15)
+                      lerpMorphTarget(viseme, 1, 0.15);
                     }
                     break;
                   }
@@ -289,7 +292,8 @@ export function Avatar(props) {
                   const viseme = visemesMapping[lastCue.value];
                   if (viseme) {
                     const fadeProgress = 1 - ((currentAudioTime - lastCue.end) / (maxLipSyncTime - lastCue.end));
-                    lerpMorphTarget(viseme, Math.max(0.2, fadeProgress * 0.6), 0.2);
+                    // Slower transition speed (reduced from 0.2 to 0.1)
+                    lerpMorphTarget(viseme, Math.max(0.2, fadeProgress * 0.6), 0.1);
                     appliedMorphTargets.push(viseme);
                     activeViseme = viseme;
                   }
@@ -319,18 +323,21 @@ export function Avatar(props) {
                     // Gradually reduce intensity as we move away from the cue, but keep it active
                     const timeSinceCueEnd = Math.max(0, currentAudioTime - lastPassedCue.end);
                     const fadeAmount = Math.max(0.4, 1 - (timeSinceCueEnd * 1.5)); // Fade slowly over time
-                    lerpMorphTarget(viseme, fadeAmount, 0.2);
+                    // Slower transition speed (reduced from 0.2 to 0.1)
+                    lerpMorphTarget(viseme, fadeAmount, 0.1);
                     appliedMorphTargets.push(viseme);
                     activeViseme = viseme;
                   }
                 } else {
                   // No cue has started yet, use neutral closed mouth
-                  lerpMorphTarget("viseme_PP", 0.2, 0.2);
+                  // Slower transition speed (reduced from 0.2 to 0.1)
+                  lerpMorphTarget("viseme_PP", 0.2, 0.1);
                   appliedMorphTargets.push("viseme_PP");
                 }
               } else {
                 // No cues available, use neutral closed mouth
-                lerpMorphTarget("viseme_PP", 0.2, 0.2);
+                // Slower transition speed (reduced from 0.2 to 0.1)
+                lerpMorphTarget("viseme_PP", 0.2, 0.1);
                 appliedMorphTargets.push("viseme_PP");
               }
             }

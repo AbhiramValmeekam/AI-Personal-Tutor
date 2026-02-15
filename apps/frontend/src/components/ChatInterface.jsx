@@ -31,11 +31,23 @@ export const ChatInterface = ({ hidden, ...props }) => {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false); // Track summary generation status
   const [chatSummary, setChatSummary] = useState(""); // Store chat summary
   const [isRetentionTestOpen, setIsRetentionTestOpen] = useState(false); // Track retention test modal state
+  const [zoomedImage, setZoomedImage] = useState(null); // Track which image is zoomed
 
   // Debug: Log when currentImages changes
   useEffect(() => {
     console.log("Current images updated:", currentImages);
   }, [currentImages]);
+
+  // Handle escape key to close zoomed image
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && zoomedImage) {
+        setZoomedImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [zoomedImage]);
 
   // Chat history is temporary - cleared on page reload
   // No localStorage persistence
@@ -514,13 +526,19 @@ export const ChatInterface = ({ hidden, ...props }) => {
               {currentImages.map((imageData, index) => {
                 // Handle both old format (just URL string) and new format (object with url and label)
                 const imageUrl = typeof imageData === 'string' ? imageData : imageData.url;
+                const imageLabel = typeof imageData === 'object' && imageData.label ? imageData.label : null;
                 
                 return (
-                  <div key={`img-${index}-${imageUrl}`} className="relative overflow-hidden rounded-lg shadow-lg" style={{ backgroundColor: '#1a1a1a' }}>
+                  <div 
+                    key={`img-${index}-${imageUrl}`} 
+                    className="relative overflow-hidden rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105" 
+                    style={{ backgroundColor: '#1a1a1a' }}
+                    onClick={() => setZoomedImage({ url: imageUrl, label: imageLabel, index })}
+                  >
                     <img
                       src={imageUrl}
-                      alt={`Related image ${index + 1}`}
-                      className="w-full object-cover transition-transform hover:scale-105"
+                      alt={imageLabel || `Related image ${index + 1}`}
+                      className="w-full object-cover"
                       style={{ height: '200px', display: 'block' }}
                       onLoad={(e) => {
                         console.log(`Image ${index + 1} loaded successfully:`, imageUrl);
@@ -531,9 +549,69 @@ export const ChatInterface = ({ hidden, ...props }) => {
                         e.target.src = `https://picsum.photos/350/200?random=${Date.now()}_${index}`;
                       }}
                     />
+                    {imageLabel && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-2 text-center">
+                        {imageLabel}
+                      </div>
+                    )}
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Zoomed Image Modal */}
+        {zoomedImage && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center pointer-events-auto"
+            onClick={() => setZoomedImage(null)}
+          >
+            {/* Close Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomedImage(null);
+              }}
+              className="absolute top-4 right-4 bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-3 rounded-full transition-all z-50"
+              aria-label="Close zoomed image"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="w-6 h-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+
+            {/* Zoomed Image Container */}
+            <div 
+              className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={zoomedImage.url}
+                alt={zoomedImage.label || `Zoomed image ${zoomedImage.index + 1}`}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                style={{ cursor: 'zoom-out' }}
+              />
+              {zoomedImage.label && (
+                <div className="mt-4 bg-black bg-opacity-70 text-white px-6 py-3 rounded-lg text-center max-w-2xl">
+                  <p className="text-lg font-semibold">{zoomedImage.label}</p>
+                </div>
+              )}
+              {/* Hint text */}
+              <div className="mt-2 text-white text-sm opacity-70">
+                Press ESC or click outside to close
+              </div>
             </div>
           </div>
         )}
