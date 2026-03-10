@@ -1,29 +1,41 @@
 import { useRef, useState, useEffect } from "react";
 import { useSpeech } from "../hooks/useSpeech";
 import { RetentionTest } from "./RetentionTest"; // Import the RetentionTest component
+import { useNavigate } from "react-router-dom";
 
 // Helper function to clean caption text
 const cleanCaption = (text) => {
-    if (!text) return "";
-    let clean = text;
-    // Remove markdown code fences
-    clean = clean.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-    // Remove backticks
-    clean = clean.replace(/^`+|`+$/g, '');
-    // If it looks like JSON, extract the text field
-    if (clean.trim().startsWith('{') && clean.includes('"text"')) {
-        try {
-            const parsed = JSON.parse(clean);
-            if (parsed.messages?.[0]?.text) return parsed.messages[0].text;
-        } catch (e) { }
-    }
-    return clean;
+  if (!text) return "";
+  let clean = text;
+  // Remove markdown code fences
+  clean = clean.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+  // Remove backticks
+  clean = clean.replace(/^`+|`+$/g, '');
+  // If it looks like JSON, extract the text field
+  if (clean.trim().startsWith('{') && clean.includes('"text"')) {
+    try {
+      const parsed = JSON.parse(clean);
+      if (parsed.messages?.[0]?.text) return parsed.messages[0].text;
+    } catch (e) { }
+  }
+  return clean;
 };
 
 export const ChatInterface = ({ hidden, ...props }) => {
   const input = useRef();
   const fileInput = useRef();
+  const navigate = useNavigate();
   const { tts, loading, message, startRecording, stopRecording, recording, currentMessageText, displayedCaptionText, stopAudio, messages, currentImages, lastUserMessage, setLastUserMessage, selectedLanguage, setSelectedLanguage } = useSpeech();
+
+  // Get logged-in user name from localStorage
+  const storedUser = JSON.parse(localStorage.getItem('adam_user') || '{}');
+  const userName = storedUser.name || 'User';
+
+  const handleLogout = () => {
+    localStorage.removeItem('adam_token');
+    localStorage.removeItem('adam_user');
+    navigate('/');
+  };
   const [chatHistory, setChatHistory] = useState([]); // Store all messages in order
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [documents, setDocuments] = useState([]); // Store uploaded documents
@@ -63,9 +75,9 @@ export const ChatInterface = ({ hidden, ...props }) => {
       };
       setChatHistory(prev => {
         // Check if message already exists to avoid duplicates
-        const exists = prev.some(msg => 
-          msg.sender === "ai" && 
-          msg.text === message.text && 
+        const exists = prev.some(msg =>
+          msg.sender === "ai" &&
+          msg.text === message.text &&
           Math.abs(new Date(msg.timestamp).getTime() - new Date().getTime()) < 5000
         );
         return exists ? prev : [...prev, aiMessage];
@@ -85,9 +97,9 @@ export const ChatInterface = ({ hidden, ...props }) => {
       sender: "user",
       timestamp: new Date()
     };
-    
+
     setChatHistory(prev => [...prev, userMessage]);
-    
+
     // Clear input and send to TTS
     input.current.value = "";
     tts(text);
@@ -104,7 +116,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
           sender: "ai",
           timestamp: new Date()
         }));
-      
+
       if (newMessages.length > 0) {
         setChatHistory(prev => {
           // Filter out duplicates
@@ -124,7 +136,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
         const messageExists = prev.some(
           msg => msg.sender === "user" && msg.text === lastUserMessage
         );
-        
+
         if (!messageExists) {
           const userMessage = {
             id: Date.now() + Math.random(),
@@ -197,7 +209,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
       }
 
       // Ask the AI to explain what's in the document using the summary
-      const aiPrompt = documentData.summary 
+      const aiPrompt = documentData.summary
         ? `I've uploaded a document named "${documentData.filename}". Here's a summary of it:\n\n${documentData.summary}\n\nCan you provide a detailed explanation of what this document is about?`
         : `I've uploaded a document named "${documentData.filename}". Can you explain what this document is about?`;
       tts(aiPrompt);
@@ -207,7 +219,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
       console.error('Error:', error);
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
-      
+
       // Add error message to chat history with more details
       const errorMessage = {
         id: Date.now(),
@@ -216,7 +228,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
         timestamp: new Date()
       };
       setChatHistory(prev => [...prev, errorMessage]);
-      
+
       // Show alert with error details
       alert(`Document upload failed: ${error.message}\n\nPlease check:\n1. File type is supported (.txt, .pdf, .docx)\n2. File size is under 10MB\n3. Backend server is running\n\nCheck browser console and backend logs for more details.`);
     } finally {
@@ -237,7 +249,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
 
     setIsGeneratingSummary(true);
     setChatSummary(""); // Clear previous summary
-    
+
     try {
       const response = await fetch("http://localhost:3002/summary", {
         method: "POST",
@@ -292,6 +304,23 @@ export const ChatInterface = ({ hidden, ...props }) => {
           <option value="hindi" className="bg-gray-800 text-white">Hindi</option>
           <option value="telugu" className="bg-gray-800 text-white">Telugu</option>
         </select>
+      </div>
+
+      {/* Logout Button - Top Right */}
+      <div className="absolute right-4 top-4 flex items-center gap-3 pointer-events-auto z-20">
+        <span className="text-white text-sm bg-black bg-opacity-50 backdrop-blur-md px-3 py-2 rounded-lg border border-white/20 hidden sm:block">
+          👤 {userName}
+        </span>
+        <button
+          onClick={handleLogout}
+          className="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg backdrop-blur-md transition-all duration-200 flex items-center gap-2 shadow-lg border border-red-500"
+          title="Sign Out"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+          </svg>
+          Sign Out
+        </button>
       </div>
 
       {/* Chat Toggle Button - Always visible */}
@@ -371,7 +400,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
                 </svg>
               </button>
             </div>
-            
+
             {/* Summarize Chat Button */}
             {chatHistory.length > 0 && (
               <div className="mb-4">
@@ -399,13 +428,13 @@ export const ChatInterface = ({ hidden, ...props }) => {
                 </button>
               </div>
             )}
-            
+
             {/* Chat Summary Display - Scrollable */}
             {chatSummary && (
               <div className="mb-4 bg-purple-900 bg-opacity-50 rounded-lg border border-purple-500 flex flex-col max-h-[200px]">
                 <div className="flex justify-between items-center p-3 border-b border-purple-600 flex-shrink-0">
                   <h3 className="font-bold text-purple-200">Chat Summary</h3>
-                  <button 
+                  <button
                     onClick={() => setChatSummary("")}
                     className="text-gray-300 hover:text-white transition-colors"
                   >
@@ -420,7 +449,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
               </div>
             )}
           </div>
-          
+
           {/* Scrollable Chat History Section */}
           <div className="flex-1 overflow-y-auto p-4 bg-gray-900 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
             <div className="space-y-4">
@@ -432,24 +461,23 @@ export const ChatInterface = ({ hidden, ...props }) => {
                     return timeA - timeB;
                   })
                   .map((msg) => (
-                    <div 
-                      key={msg.id} 
-                      className={`p-3 rounded-lg max-w-full ${
-                        msg.sender === "user" 
-                          ? "bg-blue-600 ml-auto" 
+                    <div
+                      key={msg.id}
+                      className={`p-3 rounded-lg max-w-full ${msg.sender === "user"
+                          ? "bg-blue-600 ml-auto"
                           : msg.sender === "system"
-                          ? "bg-yellow-600"
-                          : "bg-gray-700"
-                      }`}
+                            ? "bg-yellow-600"
+                            : "bg-gray-700"
+                        }`}
                     >
                       <div className="font-semibold text-sm mb-1 text-white">
                         {msg.sender === "user" ? "You" : msg.sender === "system" ? "System" : "Assistant"}
                       </div>
                       <div className="text-white break-words whitespace-pre-wrap">{msg.text}</div>
                       <div className="text-xs text-gray-300 mt-1">
-                        {msg.timestamp instanceof Date 
+                        {msg.timestamp instanceof Date
                           ? msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          : msg.timestamp 
+                          : msg.timestamp
                             ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
@@ -471,7 +499,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
         <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-30 pointer-events-none px-4 w-full max-w-3xl">
           <div className="relative animate-cinematicFadeIn">
             {/* Movie/YouTube style subtitle background */}
-            <div 
+            <div
               className="inline-block px-4 py-2 rounded-sm"
               style={{
                 backgroundColor: 'rgba(0, 0, 0, 0.75)',
@@ -480,7 +508,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
               }}
             >
               {/* Caption text - Movie/YouTube style */}
-              <p 
+              <p
                 className="text-lg md:text-xl font-normal leading-relaxed text-center break-words text-white"
                 style={{
                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.8), 0 0 4px rgba(0, 0, 0, 0.5)',
@@ -509,16 +537,16 @@ export const ChatInterface = ({ hidden, ...props }) => {
             <p className="text-gray-600 mt-2">Uploading document...</p>
           )}
         </div>
-        
-        
+
+
         {/* Retention Test Modal */}
         {isRetentionTestOpen && (
-          <RetentionTest 
-            chatHistory={chatHistory} 
-            onClose={() => setIsRetentionTestOpen(false)} 
+          <RetentionTest
+            chatHistory={chatHistory}
+            onClose={() => setIsRetentionTestOpen(false)}
           />
         )}
-        
+
         {/* Images Display Section - Middle Right, won't overlap controls */}
         {currentImages && currentImages.length > 0 && (
           <div className="absolute right-4 top-32 bg-black bg-opacity-50 backdrop-blur-md p-4 rounded-lg pointer-events-auto z-10" style={{ maxWidth: '350px', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
@@ -527,11 +555,11 @@ export const ChatInterface = ({ hidden, ...props }) => {
                 // Handle both old format (just URL string) and new format (object with url and label)
                 const imageUrl = typeof imageData === 'string' ? imageData : imageData.url;
                 const imageLabel = typeof imageData === 'object' && imageData.label ? imageData.label : null;
-                
+
                 return (
-                  <div 
-                    key={`img-${index}-${imageUrl}`} 
-                    className="relative overflow-hidden rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105" 
+                  <div
+                    key={`img-${index}-${imageUrl}`}
+                    className="relative overflow-hidden rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105"
                     style={{ backgroundColor: '#1a1a1a' }}
                     onClick={() => setZoomedImage({ url: imageUrl, label: imageLabel, index })}
                   >
@@ -563,7 +591,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
 
         {/* Zoomed Image Modal */}
         {zoomedImage && (
-          <div 
+          <div
             className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center pointer-events-auto"
             onClick={() => setZoomedImage(null)}
           >
@@ -593,7 +621,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
             </button>
 
             {/* Zoomed Image Container */}
-            <div 
+            <div
               className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
               onClick={(e) => e.stopPropagation()}
             >
@@ -615,14 +643,13 @@ export const ChatInterface = ({ hidden, ...props }) => {
             </div>
           </div>
         )}
-        
+
         <div className="w-full flex flex-col items-end justify-center gap-4"></div>
         <div className="flex items-center gap-2 pointer-events-auto max-w-screen-sm w-full mx-auto">
           <button
             onClick={recording ? stopRecording : startRecording}
-            className={`bg-gray-500 hover:bg-gray-600 text-white p-4 px-4 font-semibold uppercase rounded-md ${
-              recording ? "bg-red-500 hover:bg-red-600" : ""
-            } ${loading || message ? "cursor-not-allowed opacity-30" : ""}`}
+            className={`bg-gray-500 hover:bg-gray-600 text-white p-4 px-4 font-semibold uppercase rounded-md ${recording ? "bg-red-500 hover:bg-red-600" : ""
+              } ${loading || message ? "cursor-not-allowed opacity-30" : ""}`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -653,13 +680,12 @@ export const ChatInterface = ({ hidden, ...props }) => {
           <button
             disabled={loading || message}
             onClick={sendMessage}
-            className={`bg-gray-500 hover:bg-gray-600 text-white p-4 px-10 font-semibold uppercase rounded-md ${
-              loading || message ? "cursor-not-allowed opacity-30" : ""
-            }`}
+            className={`bg-gray-500 hover:bg-gray-600 text-white p-4 px-10 font-semibold uppercase rounded-md ${loading || message ? "cursor-not-allowed opacity-30" : ""
+              }`}
           >
             Send
           </button>
-          
+
           {/* Stop Audio Button - Only shown when there's an active message */}
           {message && (
             <button

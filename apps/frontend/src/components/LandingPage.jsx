@@ -17,13 +17,31 @@ const LandingPage = () => {
     setError('');
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // For demo purposes, redirect to the main app
+      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      const body = isLogin
+        ? { email, password }
+        : { name, email, password };
+
+      const response = await fetch(`http://localhost:3002${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Show the error message from the server
+        setError(data.error || 'An error occurred. Please try again.');
+        return;
+      }
+
+      // Save token and user info, then redirect
+      localStorage.setItem('adam_token', data.token);
+      localStorage.setItem('adam_user', JSON.stringify(data.user));
       navigate('/avatar');
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      setError('Could not connect to server. Please make sure the backend is running.');
     } finally {
       setIsLoading(false);
     }
@@ -36,7 +54,7 @@ const LandingPage = () => {
       elements.forEach(element => {
         const elementTop = element.getBoundingClientRect().top;
         const elementVisible = 150;
-        
+
         if (elementTop < window.innerHeight - elementVisible) {
           element.classList.add('active');
         }
@@ -58,7 +76,7 @@ const LandingPage = () => {
           <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-yellow-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
           <div className="absolute bottom-1/4 left-1/2 w-64 h-64 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
         </div>
-        
+
         <div className="relative z-10 text-center max-w-4xl mx-auto">
           <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
             <span className="block">Meet Your</span>
@@ -70,13 +88,13 @@ const LandingPage = () => {
             Experience the future of human-AI interaction with our lifelike digital avatar powered by Google Gemini AI
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button 
+            <button
               onClick={() => document.getElementById('features').scrollIntoView({ behavior: 'smooth' })}
               className="px-8 py-4 bg-white text-black font-semibold rounded-full hover:bg-gray-200 transition-all duration-300 transform hover:scale-105"
             >
               Explore Features
             </button>
-            <button 
+            <button
               onClick={() => document.getElementById('auth-modal').classList.remove('hidden')}
               className="px-8 py-4 bg-transparent border-2 border-white text-white font-semibold rounded-full hover:bg-white hover:text-black transition-all duration-300"
             >
@@ -84,7 +102,7 @@ const LandingPage = () => {
             </button>
           </div>
         </div>
-        
+
         <div className="absolute bottom-10 animate-bounce">
           <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
@@ -98,7 +116,7 @@ const LandingPage = () => {
           <h2 className="text-4xl md:text-5xl font-bold text-center mb-16">
             Revolutionary <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">Features</span>
           </h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             <div className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-2xl p-8 border border-gray-700 hover:border-purple-500 transition-all duration-500 transform hover:-translate-y-2">
               <div className="w-16 h-16 bg-purple-600 rounded-xl flex items-center justify-center mb-6">
@@ -111,7 +129,7 @@ const LandingPage = () => {
                 Engage in lifelike conversations with our AI-powered avatar that understands context, emotion, and nuance.
               </p>
             </div>
-            
+
             <div className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-2xl p-8 border border-gray-700 hover:border-yellow-500 transition-all duration-500 transform hover:-translate-y-2">
               <div className="w-16 h-16 bg-yellow-600 rounded-xl flex items-center justify-center mb-6">
                 <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -123,7 +141,7 @@ const LandingPage = () => {
                 Our 3D avatar displays realistic facial expressions and lip-syncing for an immersive conversational experience.
               </p>
             </div>
-            
+
             <div className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-2xl p-8 border border-gray-700 hover:border-pink-500 transition-all duration-500 transform hover:-translate-y-2">
               <div className="w-16 h-16 bg-pink-600 rounded-xl flex items-center justify-center mb-6">
                 <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -145,7 +163,7 @@ const LandingPage = () => {
           <h2 className="text-4xl md:text-5xl font-bold text-center mb-16">
             How It <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">Works</span>
           </h2>
-          
+
           <div className="flex flex-col md:flex-row items-center gap-10">
             <div className="flex-1">
               <div className="relative">
@@ -165,7 +183,7 @@ const LandingPage = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex-1">
               <div className="space-y-8">
                 <div className="flex items-start">
@@ -179,7 +197,7 @@ const LandingPage = () => {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start">
                   <div className="flex-shrink-0 w-10 h-10 bg-pink-600 rounded-full flex items-center justify-center mr-4">
                     <span className="text-white font-bold">2</span>
@@ -191,7 +209,7 @@ const LandingPage = () => {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start">
                   <div className="flex-shrink-0 w-10 h-10 bg-yellow-600 rounded-full flex items-center justify-center mr-4">
                     <span className="text-white font-bold">3</span>
@@ -215,7 +233,7 @@ const LandingPage = () => {
           <h2 className="text-4xl md:text-5xl font-bold text-center mb-16">
             What Users <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">Say</span>
           </h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             <div className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-2xl p-8 border border-gray-700">
               <div className="flex items-center mb-4">
@@ -238,7 +256,7 @@ const LandingPage = () => {
                 ))}
               </div>
             </div>
-            
+
             <div className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-2xl p-8 border border-gray-700">
               <div className="flex items-center mb-4">
                 <div className="w-12 h-12 bg-gradient-to-r from-yellow-500 to-pink-600 rounded-full flex items-center justify-center text-white font-bold mr-4">
@@ -260,7 +278,7 @@ const LandingPage = () => {
                 ))}
               </div>
             </div>
-            
+
             <div className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-2xl p-8 border border-gray-700">
               <div className="flex items-center mb-4">
                 <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">
@@ -295,7 +313,7 @@ const LandingPage = () => {
           <p className="text-xl text-gray-200 mb-10 max-w-2xl mx-auto">
             Join thousands of users experiencing the future of AI interaction today.
           </p>
-          <button 
+          <button
             onClick={() => document.getElementById('auth-modal').classList.remove('hidden')}
             className="px-10 py-5 bg-white text-black font-bold text-lg rounded-full hover:bg-gray-200 transition-all duration-300 transform hover:scale-105 shadow-2xl"
           >
@@ -346,7 +364,7 @@ const LandingPage = () => {
               <h3 className="text-2xl font-bold">
                 {isLogin ? 'Welcome Back' : 'Create Account'}
               </h3>
-              <button 
+              <button
                 onClick={() => document.getElementById('auth-modal').classList.add('hidden')}
                 className="text-gray-400 hover:text-white"
               >
@@ -355,13 +373,13 @@ const LandingPage = () => {
                 </svg>
               </button>
             </div>
-            
+
             {error && (
               <div className="mb-4 p-3 bg-red-900 bg-opacity-50 border border-red-700 rounded-lg">
                 <p className="text-red-200 text-sm">{error}</p>
               </div>
             )}
-            
+
             <form onSubmit={handleSubmit}>
               {!isLogin && (
                 <div className="mb-4">
@@ -377,7 +395,7 @@ const LandingPage = () => {
                   />
                 </div>
               )}
-              
+
               <div className="mb-4">
                 <label htmlFor="email" className="block text-gray-300 mb-2">Email Address</label>
                 <input
@@ -390,7 +408,7 @@ const LandingPage = () => {
                   required
                 />
               </div>
-              
+
               <div className="mb-6">
                 <label htmlFor="password" className="block text-gray-300 mb-2">Password</label>
                 <input
@@ -403,7 +421,7 @@ const LandingPage = () => {
                   required
                 />
               </div>
-              
+
               <button
                 type="submit"
                 disabled={isLoading}
@@ -424,7 +442,7 @@ const LandingPage = () => {
                 )}
               </button>
             </form>
-            
+
             <div className="mt-6 text-center">
               <p className="text-gray-400">
                 {isLogin ? "Don't have an account? " : "Already have an account? "}
@@ -439,7 +457,7 @@ const LandingPage = () => {
           </div>
         </div>
       </div>
-      
+
       {/* Custom Styles for Animations */}
       <style jsx>{`
         @keyframes blob {
