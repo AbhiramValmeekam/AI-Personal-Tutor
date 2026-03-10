@@ -1,102 +1,166 @@
 # Adam Project - YOUR AI PERSONAL TEACHER
 
-This project is a talking avatar powered by Google's Gemini AI that can engage in conversations with users. The avatar can speak, listen, and express emotions through facial expressions and animations. It uses Gemini for natural language processing, local TTS for voice generation, and Rhubarb Lip Sync for lip synchronization.
+An AI-powered talking avatar built with Google Gemini, Three.js, and React. Adam can hold conversations, express emotions, speak in multiple languages, and now supports real user authentication backed by MongoDB.
 
 ## Key Features
 
-- Natural conversation with AI-powered responses
-- Realistic facial expressions and body animations
-- Text-to-speech and speech-to-text capabilities
-- Lip synchronization for realistic mouth movements
-- Interactive 3D avatar built with Three.js and React
+- 🤖 **Natural AI Conversations** — powered by Google Gemini
+- 🎭 **Expressive 3D Avatar** — realistic facial expressions, body animations, and lip-sync
+- 🎙️ **Voice & Text Input** — speech-to-text and text-to-speech in English, Hindi, and Telugu
+- 🌐 **Multilingual TTS** — Google Cloud TTS for Hindi & Telugu, with proper script validation
+- 📄 **Document Upload** — upload PDF/DOCX/TXT and let Adam summarize and explain them
+- 🧠 **Retention Tests** — AI-generated quizzes from conversation history with personalized feedback
+- 🔐 **Real Authentication** — register/login with MongoDB + bcrypt + JWT tokens
+- 🔒 **Protected Routes** — `/avatar` is accessible only to authenticated users
+
+---
 
 ## How it Works
 
-The system operates through two primary workflows, depending on whether the user input is in text or audio form:
+### Text Input Workflow
+1. User types a message in the chat interface
+2. Text is sent to the Gemini API for processing
+3. Gemini generates a response with facial expression/animation metadata
+4. Response is converted to speech (Google Cloud TTS for Hindi/Telugu, local TTS for English)
+5. Audio is processed by Rhubarb Lip Sync to generate viseme data
+6. Avatar animates with synchronized lip movements and expressions
 
-### Workflow with Text Input:
-1. **User Input:** The user enters text through the chat interface.
-2. **AI Processing:** The text is sent to Google's Gemini API for processing.
-3. **Response Generation:** Gemini generates a contextual response with appropriate facial expressions and animations.
-4. **Audio Generation:** The response text is converted to speech using the system's local TTS.
-5. **Lip Sync Generation:** The audio is processed by Rhubarb Lip Sync to generate viseme metadata.
-6. **Avatar Animation:** The avatar displays the response with synchronized lip movements and appropriate facial expressions.
+### Voice Input Workflow
+1. User speaks into the microphone
+2. Audio is converted to text via Google Cloud STT
+3. Same pipeline as text input from step 2 onwards
 
-### Workflow with Audio Input:
-1. **User Input:** The user speaks into the microphone.
-2. **Speech-to-Text Conversion:** The audio is converted to text using the system's local STT.
-3. **AI Processing:** The converted text is sent to Google's Gemini API for processing.
-4. **Response Generation:** Gemini generates a contextual response with appropriate facial expressions and animations.
-5. **Audio Generation:** The response text is converted to speech using the system's local TTS.
-6. **Lip Sync Generation:** The audio is processed by Rhubarb Lip Sync to generate viseme metadata.
-7. **Avatar Animation:** The avatar displays the response with synchronized lip movements and appropriate facial expressions.
+### Authentication Flow
+1. User registers (name, email, password) → password hashed with bcrypt → stored in MongoDB
+2. On login, credentials verified → JWT token returned and stored in `localStorage`
+3. All visits to `/avatar` are protected — unauthenticated users are redirected to landing page
+4. Logout clears token and redirects back to the landing page
 
-
+---
 
 ## Getting Started
 
 ### Requirements
-Before using this system, ensure you have the following prerequisites:
 
-1. **Google Cloud Account:** You need a Google Cloud account with access to the Gemini API. Get your API key from the [Google AI Studio](https://aistudio.google.com/).
-2. **Rhubarb Lip-Sync:** Download the latest version of Rhubarb Lip-Sync compatible with your operating system from the official [Rhubarb Lip-Sync repository](https://github.com/DanielSWolf/rhubarb-lip-sync/releases). Once downloaded, create a `/bin` directory in the backend and move all the contents of the unzipped `rhubarb-lip-sync.zip` into it.
-3. Install `ffmpeg` for [Mac OS](https://formulae.brew.sh/formula/ffmpeg), [Linux](https://ffmpeg.org/download.html) or [Windows](https://ffmpeg.org/download.html).
+1. **Node.js** (v18+)
+2. **MongoDB** — install locally or use [MongoDB Atlas](https://www.mongodb.com/atlas). [MongoDB Compass](https://www.mongodb.com/products/compass) recommended for visual management.
+3. **Google Cloud Account** — for Gemini API and Google Cloud TTS/STT
+   - Gemini API key: [Google AI Studio](https://aistudio.google.com/)
+   - Service Account JSON: [Google Cloud Console](https://console.cloud.google.com/) (enable Cloud TTS & STT APIs)
+4. **Rhubarb Lip-Sync** — download from [Rhubarb Lip-Sync releases](https://github.com/DanielSWolf/rhubarb-lip-sync/releases). Create a `/bin` directory in `apps/backend` and extract contents there.
+5. **ffmpeg** — [Mac](https://formulae.brew.sh/formula/ffmpeg) | [Linux/Windows](https://ffmpeg.org/download.html)
+
+---
 
 ### Installation
 
-1. Clone this repository:
-  
+1. **Clone the repository:**
 ```bash
 git clone https://github.com/AbhiramValmeekam/adam-project.git
-```
-
-2. Navigate to the project directory:
-
-```bash
 cd adam-project
 ```
 
-3. Install dependencies for monorepo:
+2. **Install all dependencies:**
 ```bash
+# Root monorepo
 yarn
+
+# Backend
+cd apps/backend
+npm install
+
+# Frontend
+cd apps/frontend
+npm install
 ```
 
-4. Create a .env file in the root `/apps/backend/` of the project and add your Google API key:
+3. **Create the `.env` file** in `apps/backend/`:
+```env
+# MongoDB
+MONGODB_URI=mongodb://localhost:27017/adam-project
+
+# JWT Authentication
+JWT_SECRET=your_super_secret_jwt_key_change_this
+JWT_EXPIRES_IN=7d
+
+# Google Gemini AI
+GEMINI_API_KEY=<YOUR_GEMINI_API_KEY>
+
+# Google Cloud TTS/STT (for Hindi and Telugu)
+GOOGLE_APPLICATION_CREDENTIALS=<ABSOLUTE_PATH_TO_YOUR_SERVICE_ACCOUNT_JSON>
+```
+
+4. **Start MongoDB** — make sure your local MongoDB server is running (or use Atlas connection string in `MONGODB_URI`).
+
+5. **Run the servers:**
 
 ```bash
-# Google Gemini
-GEMINI_API_KEY=<YOUR_GOOGLE_GEMINI_API_KEY>
+# Terminal 1 - Backend (port 3002)
+cd apps/backend
+npm run dev
+
+# Terminal 2 - Frontend (port 5173)
+cd apps/frontend
+npm run dev
 ```
 
-5. Run the development system:
+6. Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-```bash
-yarn dev
-```
-
-6. If you need install another dependence in the monorepo, you can do this:
-
-```bash
-yarn add --dev -W <PACKAGE_NAME>
-yarn
-```
-
-Open [http://localhost:5173/](http://localhost:5173/) with your browser to see the result.
+---
 
 ## Project Structure
 
-- `/apps/backend` - Contains the Node.js server with Gemini integration, TTS/STS processing, and lip-sync generation
-- `/apps/frontend` - Contains the React frontend with Three.js avatar implementation
-- `/resources` - Contains architectural diagrams and other documentation assets
+```
+adam-project/
+├── apps/
+│   ├── backend/               # Node.js Express server
+│   │   ├── modules/           # Gemini, TTS, STT, lip-sync modules
+│   │   ├── utils/             # Audio and file utilities
+│   │   ├── audios/            # Generated audio cache
+│   │   └── server.js          # Main server (auth routes + AI endpoints)
+│   └── frontend/              # React + Vite app
+│       └── src/
+│           ├── components/    # Avatar, ChatInterface, LandingPage, RetentionTest
+│           ├── hooks/         # useSpeech hook
+│           ├── constants/     # Viseme mappings, morph targets
+│           └── App.jsx        # Router with ProtectedRoute
+└── resources/                 # Architecture diagrams
+```
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/register` | Register new user (name, email, password) |
+| `POST` | `/auth/login` | Login and receive JWT token |
+| `GET` | `/auth/verify` | Verify JWT token validity |
+| `POST` | `/tts` | Generate avatar response from text |
+| `POST` | `/sts` | Speech-to-avatar (audio → text → response) |
+| `POST` | `/summary` | Generate a summary of chat history |
+| `POST` | `/retention-test/generate` | Generate quiz from conversation |
+| `POST` | `/retention-test/feedback` | Get personalized feedback on quiz results |
+| `POST` | `/api/documents/upload` | Upload & summarize a document (PDF/DOCX/TXT) |
+
+---
 
 ## Customization
 
-You can customize the avatar's personality, responses, and behavior by modifying the prompt template in `apps/backend/modules/gemini.mjs`. The avatar's characteristics, response format, and interaction style are all defined in this file.
+- **Avatar personality & responses:** Edit the prompt in `apps/backend/modules/gemini.mjs`
+- **Supported languages:** English, Hindi (`hi-IN`), Telugu (`te-IN`)
+- **Voice config:** Adjust voice names/gender in `apps/backend/modules/google-tts.mjs`
+- **JWT expiry:** Change `JWT_EXPIRES_IN` in `.env` (e.g. `7d`, `24h`, `30d`)
+
+---
 
 ## References
-* Google Gemini: https://ai.google.dev/
-* Rhubarb Lip-Sync: https://github.com/DanielSWolf/rhubarb-lip-sync
-* Three.js: https://threejs.org/
-* React: https://reactjs.org/
-* Ready Player Me: https://readyplayer.me/
-* Mixamo: https://www.mixamo.com/
+
+- [Google Gemini](https://ai.google.dev/)
+- [Google Cloud TTS](https://cloud.google.com/text-to-speech)
+- [MongoDB](https://www.mongodb.com/)
+- [Rhubarb Lip-Sync](https://github.com/DanielSWolf/rhubarb-lip-sync)
+- [Three.js](https://threejs.org/)
+- [React](https://reactjs.org/)
+- [Ready Player Me](https://readyplayer.me/)
+- [Mixamo](https://www.mixamo.com/)
