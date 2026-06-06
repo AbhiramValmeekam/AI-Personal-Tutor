@@ -1,4 +1,4 @@
-# Adam Project - YOUR AI PERSONAL TEACHER
+# YOUR AI PERSONAL TEACHER
 
 An AI-powered talking avatar built with Google Gemini, Three.js, and React. Adam can hold conversations, express emotions, speak in multiple languages, and now supports real user authentication backed by MongoDB.
 
