@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useSpeech } from "../hooks/useSpeech";
 
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3002";
+
 export const RetentionTest = ({ chatHistory, onClose }) => {
   const { tts, stopAudio } = useSpeech();
   const [test, setTest] = useState(null);
@@ -23,7 +25,7 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:3002/retention-test/generate", {
+      const response = await fetch(`${API_BASE_URL}/retention-test/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -108,7 +110,7 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:3002/retention-test/feedback", {
+      const response = await fetch(`${API_BASE_URL}/retention-test/feedback`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

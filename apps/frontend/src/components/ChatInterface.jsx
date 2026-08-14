@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { useSpeech } from "../hooks/useSpeech";
 import { RetentionTest } from "./RetentionTest"; // Import the RetentionTest component
-import { useNavigate } from "react-router-dom";
 
 // Helper function to clean caption text
 const cleanCaption = (text) => {
@@ -21,11 +20,22 @@ const cleanCaption = (text) => {
   return clean;
 };
 
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3002";
+
 export const ChatInterface = ({ hidden, ...props }) => {
   const input = useRef();
   const fileInput = useRef();
-  const navigate = useNavigate();
   const { tts, loading, message, startRecording, stopRecording, recording, currentMessageText, displayedCaptionText, stopAudio, messages, currentImages, lastUserMessage, setLastUserMessage, selectedLanguage, setSelectedLanguage } = useSpeech();
+
+  // Auth state
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('adam_token'));
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isLoginForm, setIsLoginForm] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
 
   // Get logged-in user name from localStorage
   const storedUser = JSON.parse(localStorage.getItem('adam_user') || '{}');
@@ -34,8 +44,50 @@ export const ChatInterface = ({ hidden, ...props }) => {
   const handleLogout = () => {
     localStorage.removeItem('adam_token');
     localStorage.removeItem('adam_user');
-    navigate('/');
+    setIsLoggedIn(false);
   };
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError('');
+
+    try {
+      const endpoint = isLoginForm ? '/auth/login' : '/auth/register';
+      const body = isLoginForm
+        ? { email: authEmail, password: authPassword }
+        : { name: authName, email: authEmail, password: authPassword };
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setAuthError(data.error || 'An error occurred. Please try again.');
+        return;
+      }
+
+      // Save token and user info
+      localStorage.setItem('adam_token', data.token);
+      localStorage.setItem('adam_user', JSON.stringify(data.user));
+      setIsLoggedIn(true);
+      setIsAuthModalOpen(false);
+      // Reset form
+      setAuthEmail('');
+      setAuthPassword('');
+      setAuthName('');
+      setAuthError('');
+    } catch (err) {
+      setAuthError('Could not connect to server. Please make sure the backend is running.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const [chatHistory, setChatHistory] = useState([]); // Store all messages in order
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [documents, setDocuments] = useState([]); // Store uploaded documents
@@ -165,7 +217,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
       formData.append('language', selectedLanguage || 'english'); // Send selected language
 
       // Use the same backend URL as the speech hook
-      const response = await fetch(`http://localhost:3002/api/documents/upload`, {
+      const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
         method: 'POST',
         body: formData
       });
@@ -251,7 +303,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
     setChatSummary(""); // Clear previous summary
 
     try {
-      const response = await fetch("http://localhost:3002/summary", {
+      const response = await fetch(`${API_BASE_URL}/summary`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -306,21 +358,36 @@ export const ChatInterface = ({ hidden, ...props }) => {
         </select>
       </div>
 
-      {/* Logout Button - Top Right */}
+      {/* Auth Buttons - Top Right */}
       <div className="absolute right-4 top-4 flex items-center gap-3 pointer-events-auto z-20">
-        <span className="text-white text-sm bg-black bg-opacity-50 backdrop-blur-md px-3 py-2 rounded-lg border border-white/20 hidden sm:block">
-          👤 {userName}
-        </span>
-        <button
-          onClick={handleLogout}
-          className="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg backdrop-blur-md transition-all duration-200 flex items-center gap-2 shadow-lg border border-red-500"
-          title="Sign Out"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-          </svg>
-          Sign Out
-        </button>
+        {isLoggedIn ? (
+          <>
+            <span className="text-white text-sm bg-black bg-opacity-50 backdrop-blur-md px-3 py-2 rounded-lg border border-white/20 hidden sm:block">
+              👤 {userName}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg backdrop-blur-md transition-all duration-200 flex items-center gap-2 shadow-lg border border-red-500"
+              title="Sign Out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+              Sign Out
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => { setIsAuthModalOpen(true); setIsLoginForm(true); setAuthError(''); }}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm font-semibold px-5 py-2 rounded-lg backdrop-blur-md transition-all duration-200 flex items-center gap-2 shadow-lg border border-purple-500/50"
+            title="Sign In"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+            Sign In
+          </button>
+        )}
       </div>
 
       {/* Chat Toggle Button - Always visible */}
@@ -573,8 +640,9 @@ export const ChatInterface = ({ hidden, ...props }) => {
                       }}
                       onError={(e) => {
                         console.error(`Image ${index + 1} failed to load:`, imageUrl);
-                        // Fallback to a different random image if one fails
-                        e.target.src = `https://picsum.photos/350/200?random=${Date.now()}_${index}`;
+                        // Fallback to AI-generated image relevant to the topic
+                        const fallbackPrompt = encodeURIComponent(imageLabel || `educational illustration ${index + 1}`);
+                        e.target.src = `https://image.pollinations.ai/prompt/${fallbackPrompt}?width=350&height=200&nologo=true&seed=${Date.now()}_${index}`;
                       }}
                     />
                     {imageLabel && (
@@ -645,6 +713,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
         )}
 
         <div className="w-full flex flex-col items-end justify-center gap-4"></div>
+        {isLoggedIn ? (
         <div className="flex items-center gap-2 pointer-events-auto max-w-screen-sm w-full mx-auto">
           <button
             onClick={recording ? stopRecording : startRecording}
@@ -709,7 +778,124 @@ export const ChatInterface = ({ hidden, ...props }) => {
             </button>
           )}
         </div>
+        ) : (
+        <div className="flex items-center gap-3 pointer-events-auto max-w-screen-sm w-full mx-auto">
+          <div className="flex-1 p-4 rounded-md bg-opacity-50 bg-white backdrop-blur-md text-gray-600 italic text-center">
+            Sign in to start chatting with Adam
+          </div>
+          <button
+            onClick={() => { setIsAuthModalOpen(true); setIsLoginForm(true); setAuthError(''); }}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white p-4 px-8 font-semibold rounded-md transition-all duration-200 shadow-lg"
+          >
+            Sign In
+          </button>
+        </div>
+        )}
       </div>
+
+      {/* Auth Modal */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 pointer-events-auto">
+          <div className="bg-gray-900 rounded-2xl max-w-md w-full overflow-hidden border border-gray-700 shadow-2xl">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-bold text-white">
+                  {isLoginForm ? 'Welcome Back' : 'Create Account'}
+                </h3>
+                <button
+                  onClick={() => setIsAuthModalOpen(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {authError && (
+                <div className="mb-4 p-3 bg-red-900 bg-opacity-50 border border-red-700 rounded-lg">
+                  <p className="text-red-200 text-sm">{authError}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleAuthSubmit}>
+                {!isLoginForm && (
+                  <div className="mb-4">
+                    <label htmlFor="authName" className="block text-gray-300 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      id="authName"
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="Enter your full name"
+                      required
+                    />
+                  </div>
+                )}
+
+                <div className="mb-4">
+                  <label htmlFor="authEmail" className="block text-gray-300 mb-2">Email Address</label>
+                  <input
+                    type="email"
+                    id="authEmail"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="Enter your email"
+                    required
+                  />
+                </div>
+
+                <div className="mb-6">
+                  <label htmlFor="authPassword" className="block text-gray-300 mb-2">Password</label>
+                  <input
+                    type="password"
+                    id="authPassword"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="Enter your password"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 disabled:opacity-50"
+                >
+                  {authLoading ? (
+                    <div className="flex items-center justify-center">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </div>
+                  ) : isLoginForm ? (
+                    'Sign In'
+                  ) : (
+                    'Sign Up'
+                  )}
+                </button>
+              </form>
+
+              <div className="mt-6 text-center">
+                <p className="text-gray-400">
+                  {isLoginForm ? "Don't have an account? " : "Already have an account? "}
+                  <button
+                    onClick={() => { setIsLoginForm(!isLoginForm); setAuthError(''); }}
+                    className="text-purple-400 hover:text-purple-300 font-medium"
+                  >
+                    {isLoginForm ? 'Sign Up' : 'Sign In'}
+                  </button>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -192,25 +192,13 @@ async function fetchWikimediaImages(searchQuery, count = 3) {
       }
     }
 
-    // No images found, return placeholder
-    console.log(`No relevant Wikimedia images found for: "${searchQuery}"`);
-    const timestamp = Date.now();
-    return [{
-      url: `https://picsum.photos/400/300?random=${timestamp}`,
-      label: `Topic illustration: ${searchQuery}`,
-      photographer: 'Placeholder',
-      source: 'picsum'
-    }];
+    // No images found, use AI-generated image relevant to the topic
+    console.log(`No relevant Wikimedia images found for: "${searchQuery}", using AI-generated image`);
+    return [generateAIImage(`educational illustration of ${searchQuery}, detailed, realistic`, Date.now())];
   } catch (error) {
     console.error('Error fetching from Wikimedia:', error.message);
-    // Fallback to placeholder
-    const timestamp = Date.now();
-    return [{
-      url: `https://picsum.photos/400/300?random=${timestamp}`,
-      label: `Subject: ${searchQuery}`,
-      photographer: 'Placeholder',
-      source: 'picsum'
-    }];
+    // Fallback to AI-generated image relevant to the topic
+    return [generateAIImage(`educational illustration of ${searchQuery}, detailed, realistic`, Date.now())];
   }
 }
 
@@ -218,16 +206,12 @@ async function fetchWikimediaImages(searchQuery, count = 3) {
 async function fetchPexelsImages(searchQuery, count = 2) {
   const apiKey = process.env.PEXELS_API_KEY;
 
-  // If no API key, return placeholder images with labels
+  // If no API key, return AI-generated images relevant to the topic
   if (!apiKey || apiKey === 'YOUR_PEXELS_API_KEY_HERE') {
-    console.log('Pexels API key not configured, using placeholder images');
-    const timestamp = Date.now();
-    return Array.from({ length: count }, (_, i) => ({
-      url: `https://picsum.photos/400/300?random=${timestamp + i}`,
-      label: searchQuery,
-      photographer: 'Placeholder',
-      source: 'picsum'
-    }));
+    console.log('Pexels API key not configured, using AI-generated images');
+    return Array.from({ length: Math.min(count, 2) }, (_, i) =>
+      generateAIImage(`${searchQuery}, ${i === 0 ? 'detailed realistic photo' : 'educational diagram'}`, Date.now() + i)
+    );
   }
 
   try {
@@ -255,26 +239,14 @@ async function fetchPexelsImages(searchQuery, count = 2) {
         alt: photo.alt || searchQuery
       }));
     } else {
-      // No images found, return placeholder
+      // No images found, use AI-generated image
       console.log(`No Pexels images found for: ${searchQuery}`);
-      const timestamp = Date.now();
-      return [{
-        url: `https://picsum.photos/400/300?random=${timestamp}`,
-        label: searchQuery,
-        photographer: 'Placeholder',
-        source: 'picsum'
-      }];
+      return [generateAIImage(`${searchQuery}, realistic photo`, Date.now())];
     }
   } catch (error) {
     console.error('Error fetching from Pexels:', error.message);
-    // Fallback to placeholder
-    const timestamp = Date.now();
-    return [{
-      url: `https://picsum.photos/400/300?random=${timestamp}`,
-      label: searchQuery,
-      photographer: 'Placeholder',
-      source: 'picsum'
-    }];
+    // Fallback to AI-generated image
+    return [generateAIImage(`${searchQuery}, realistic photo`, Date.now())];
   }
 }
 
@@ -450,31 +422,12 @@ async function generateImageUrls(question, responseText) {
     console.warn("⚠️  Pexels search failed, falling back to placeholders:", pexelsError.message);
   }
 
-  // Final fallback to descriptive placeholders with stronger relevance indicators
-  console.log(`📄 Creating maximally descriptive placeholder images for: "${searchTerms}"`);
-  const timestamp = Date.now();
+  // Final fallback to AI-generated images that are always relevant to the topic
+  console.log(`🎨 Creating AI-generated images for: "${searchTerms}"`);
   return [
-    {
-      url: `https://picsum.photos/400/300?random=${timestamp}`,
-      label: `📘 Educational visualization: "${searchTerms}"`,
-      photographer: 'AI-Generated Placeholder',
-      source: 'placeholder',
-      alt: `Conceptual representation specifically for ${searchTerms}`
-    },
-    {
-      url: `https://picsum.photos/400/300?random=${timestamp + 1}`,
-      label: `📙 Learning aid: "${searchTerms}"`,
-      photographer: 'AI-Generated Placeholder',
-      source: 'placeholder',
-      alt: `Visual support specifically for ${searchTerms}`
-    },
-    {
-      url: `https://picsum.photos/400/300?random=${timestamp + 2}`,
-      label: `📓 Instructional diagram: "${searchTerms}"`,
-      photographer: 'AI-Generated Placeholder',
-      source: 'placeholder',
-      alt: `Illustrative content specifically for ${searchTerms}`
-    }
+    generateAIImage(`${searchTerms}, educational illustration, detailed, realistic`, Date.now()),
+    generateAIImage(`${searchTerms}, diagram, infographic style, clear labels`, Date.now() + 1),
+    generateAIImage(`${searchTerms}, scientific visualization, educational`, Date.now() + 2)
   ];
 }
 

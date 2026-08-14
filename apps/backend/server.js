@@ -101,7 +101,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(cors());
 // Increase payload size limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-const port = 3002; // Changed from 3001 to 3002
+const port = process.env.PORT || 3002;
 
 // Configure multer for file uploads
 const upload = multer({
