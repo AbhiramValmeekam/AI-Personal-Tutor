@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "build": "npm run build --prefix apps/frontend",
     "client": "yarn --cwd apps/frontend dev",
     "server": "yarn --cwd apps/backend dev",
     "dev": "npm-run-all --parallel client server"
