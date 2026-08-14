@@ -34,11 +34,28 @@ async function transcribeWithGoogle(audioFilePath, language = "english") {
       throw new Error("Audio file is empty");
     }
 
-    // Read credentials and get access token
-    const auth = new GoogleAuth({
-      keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    let authOptions = {
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-    });
+    };
+
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+      authOptions.credentials = typeof process.env.GOOGLE_CREDENTIALS_JSON === 'string'
+        ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
+        : process.env.GOOGLE_CREDENTIALS_JSON;
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      const creds = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      if (fs.existsSync(creds)) {
+        authOptions.keyFile = creds;
+      } else {
+        try {
+          authOptions.credentials = JSON.parse(creds);
+        } catch (e) {
+          throw new Error(`Google Cloud credentials file not found at: ${creds}`);
+        }
+      }
+    }
+
+    const auth = new GoogleAuth(authOptions);
 
     console.log("Getting access token...");
     const client = await auth.getClient();

@@ -25,30 +25,35 @@ let client = null;
 function getClient() {
   if (!client) {
     try {
-      // Check if credentials are set
-      if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        throw new Error('GOOGLE_APPLICATION_CREDENTIALS environment variable not set. Please set it to the path of your service account JSON file.');
+      let credentialsOption = {};
+
+      if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        console.log('[Google TTS] Initializing client using GOOGLE_CREDENTIALS_JSON env var...');
+        const credentials = typeof process.env.GOOGLE_CREDENTIALS_JSON === 'string'
+          ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
+          : process.env.GOOGLE_CREDENTIALS_JSON;
+        credentialsOption = { credentials };
+      } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        console.log(`[Google TTS] Credentials path: ${credsPath}`);
+        if (fs.existsSync(credsPath)) {
+          credentialsOption = { keyFilename: credsPath };
+        } else {
+          try {
+            const parsed = JSON.parse(credsPath);
+            credentialsOption = { credentials: parsed };
+          } catch (e) {
+            throw new Error(`Google Cloud credentials file not found at: ${credsPath}`);
+          }
+        }
+      } else {
+        throw new Error('GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CREDENTIALS_JSON environment variable is required for Hindi/Telugu TTS.');
       }
 
-      const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-      console.log(`[Google TTS] Credentials path: ${credsPath}`);
-      
-      // Check if file exists
-      if (!fs.existsSync(credsPath)) {
-        throw new Error(`Google Cloud credentials file not found: ${credsPath}`);
-      }
-
-      console.log(`[Google TTS] Credentials file found, initializing client...`);
-
-      // Initialize client with credentials
-      client = new TextToSpeechClient({
-        keyFilename: credsPath
-      });
-      
+      client = new TextToSpeechClient(credentialsOption);
       console.log('[Google TTS] ✅ Client initialized successfully');
     } catch (error) {
       console.error('[Google TTS] ❌ Failed to initialize client:', error.message);
-      console.error('[Google TTS] Error stack:', error.stack);
       throw error;
     }
   }
