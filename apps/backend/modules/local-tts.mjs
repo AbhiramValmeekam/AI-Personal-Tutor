@@ -86,17 +86,20 @@ async function convertTextToSpeech({ text, fileName, language = "english" }) {
     } else if (platform === "win32") {
       // Windows - use PowerShell with .NET SpeechSynthesizer
       try {
-        // Properly escape the text for PowerShell
-        const escapedText = text.replace(/"/g, '`"').replace(/\$/g, '`$');
+        // Pass text as Base64: Gemini output contains curly quotes, em-dashes
+        // and other Unicode that corrupts a .ps1 written without BOM and
+        // breaks PowerShell string escaping. Base64 is always parser-safe.
+        const b64Text = Buffer.from(text, "utf8").toString("base64");
         const psScript = `
           Add-Type -AssemblyName System.Speech
           $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
           # Set voice properties for better quality
           $synth.Rate = 0
           $synth.Volume = 100
+          $text = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64Text}'))
           $stream = New-Object System.IO.FileStream("${fileName}", [System.IO.FileMode]::Create)
           $synth.SetOutputToWaveStream($stream)
-          $synth.Speak("${escapedText}")
+          $synth.Speak($text)
           $stream.Close()
         `;
 

@@ -12,7 +12,7 @@ function App() {
       <Loader />
       <Leva collapsed hidden />
       <ChatInterface />
-      <Canvas shadows camera={{ position: [0, 0, 0], fov: 10 }}>
+      <Canvas shadows camera={{ position: [0, 0, 0], fov: 10, near: 0.5, far: 60 }}>
         <Scenario />
       </Canvas>
     </>

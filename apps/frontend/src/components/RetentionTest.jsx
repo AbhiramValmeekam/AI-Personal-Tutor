@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSpeech } from "../hooks/useSpeech";
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3002";
@@ -38,6 +38,9 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
       }
 
       const testData = await response.json();
+      if (!testData.questions || !Array.isArray(testData.questions) || testData.questions.length === 0) {
+        throw new Error("No questions returned");
+      }
       setTest(testData);
       setCurrentQuestionIndex(0);
       setSelectedAnswers({});
@@ -146,6 +149,18 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
     stopAudio();
   };
 
+  // Popup focus priority: grab keyboard focus whenever the modal
+  // appears or changes state, and let Escape close it.
+  const modalRef = useRef(null);
+  useEffect(() => {
+    if (modalRef.current) modalRef.current.focus();
+  }, [isLoading, error, test]);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // Initialize test on component mount
   useEffect(() => {
     generateTest();
@@ -160,7 +175,7 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
 
   if (isLoading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div ref={modalRef} tabIndex={-1} className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 pointer-events-auto outline-none">
         <div className="bg-gray-800 rounded-lg p-8 max-w-2xl w-full mx-4">
           <div className="flex flex-col items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
@@ -174,7 +189,7 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
 
   if (error) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div ref={modalRef} tabIndex={-1} className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 pointer-events-auto outline-none">
         <div className="bg-gray-800 rounded-lg p-8 max-w-2xl w-full mx-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold text-white">Retention Test</h2>
@@ -200,6 +215,12 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
           
           <div className="flex justify-end space-x-3">
             <button
+              onClick={() => { setError(""); generateTest(); }}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
               onClick={onClose}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
@@ -215,12 +236,37 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
     return null;
   }
 
+  if (!test.questions || !Array.isArray(test.questions) || test.questions.length === 0) {
+    return (
+      <div ref={modalRef} tabIndex={-1} className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 pointer-events-auto outline-none">
+        <div className="bg-gray-800 rounded-lg p-8 max-w-2xl w-full mx-4 text-center">
+          <h2 className="text-2xl font-bold text-white mb-2">No Quiz Questions</h2>
+          <p className="text-gray-300 mb-6">Gemini couldn't build questions from this session yet. Chat a bit more, then retry.</p>
+          <div className="flex justify-center space-x-3">
+            <button
+              onClick={() => generateTest()}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const currentQuestion = test.questions[currentQuestionIndex];
   const isLastQuestion = currentQuestionIndex === test.questions.length - 1;
   const isFirstQuestion = currentQuestionIndex === 0;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div ref={modalRef} tabIndex={-1} className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 pointer-events-auto outline-none">
       <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">

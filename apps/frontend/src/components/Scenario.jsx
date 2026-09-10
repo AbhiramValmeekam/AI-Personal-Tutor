@@ -1,6 +1,7 @@
-import { CameraControls, Environment } from "@react-three/drei";
+import { CameraControls } from "@react-three/drei";
 import { useEffect, useRef } from "react";
 import { Avatar } from "./Avatar";
+import { Library } from "./Library";
 
 export const Scenario = () => {
   const cameraControls = useRef();
@@ -9,8 +10,17 @@ export const Scenario = () => {
   }, []);
   return (
     <>
-      <CameraControls ref={cameraControls} />
-      <Environment preset="sunset" />
+      <CameraControls
+        ref={cameraControls}
+        minDistance={2.5}
+        maxDistance={9}
+        minPolarAngle={0.9}
+        maxPolarAngle={1.55}
+        minAzimuthAngle={-0.85}
+        maxAzimuthAngle={0.85}
+        enablePan={false}
+      />
+      <Library />
       <Avatar />
     </>
   );

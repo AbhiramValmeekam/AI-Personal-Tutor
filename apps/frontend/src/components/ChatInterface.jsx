@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useSpeech } from "../hooks/useSpeech";
 import { RetentionTest } from "./RetentionTest"; // Import the RetentionTest component
+import { Flashcards } from "./Flashcards"; // Import the Flashcards component
 
 // Helper function to clean caption text
 const cleanCaption = (text) => {
@@ -95,7 +96,27 @@ export const ChatInterface = ({ hidden, ...props }) => {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false); // Track summary generation status
   const [chatSummary, setChatSummary] = useState(""); // Store chat summary
   const [isRetentionTestOpen, setIsRetentionTestOpen] = useState(false); // Track retention test modal state
+  const [isFlashcardsOpen, setIsFlashcardsOpen] = useState(false); // Track flashcards modal state
   const [zoomedImage, setZoomedImage] = useState(null); // Track which image is zoomed
+  const [toast, setToast] = useState(""); // Toast notification message
+  const toastTimer = useRef(null);
+  const showToast = (msg) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 3500);
+  };
+
+  // Surface avatar voice-playback problems as toasts
+  useEffect(() => {
+    const onBlocked = () => showToast("Browser blocked autoplay — tap anywhere to hear Adam's voice.");
+    const onFailed = () => showToast("Voice playback failed for this reply — check your volume and try again.");
+    window.addEventListener("adam:audio-blocked", onBlocked);
+    window.addEventListener("adam:audio-failed", onFailed);
+    return () => {
+      window.removeEventListener("adam:audio-blocked", onBlocked);
+      window.removeEventListener("adam:audio-failed", onFailed);
+    };
+  }, []);
 
   // Debug: Log when currentImages changes
   useEffect(() => {
@@ -281,8 +302,8 @@ export const ChatInterface = ({ hidden, ...props }) => {
       };
       setChatHistory(prev => [...prev, errorMessage]);
 
-      // Show alert with error details
-      alert(`Document upload failed: ${error.message}\n\nPlease check:\n1. File type is supported (.txt, .pdf, .docx)\n2. File size is under 10MB\n3. Backend server is running\n\nCheck browser console and backend logs for more details.`);
+      // Show toast with error details
+      showToast(`Document upload failed: ${error.message}`);
     } finally {
       setIsUploading(false);
       // Reset file input
@@ -366,6 +387,22 @@ export const ChatInterface = ({ hidden, ...props }) => {
               👤 {userName}
             </span>
             <button
+              onClick={() => {
+                if (chatHistory.length === 0) {
+                  showToast("Have a conversation with Adam first, then revise with flashcards.");
+                  return;
+                }
+                setIsFlashcardsOpen(true);
+              }}
+              className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-lg backdrop-blur-md transition-all duration-200 flex items-center gap-2 shadow-lg border border-teal-500"
+              title="Revise with flashcards"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6a2.25 2.25 0 00-2.25-2.25H6A2.25 2.25 0 003.75 6v8.25A2.25 2.25 0 006 16.5h2.25m8.25-8.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-7.5A2.25 2.25 0 018.25 18v-7.5a2.25 2.25 0 012.25-2.25h6z" />
+              </svg>
+              Flashcards
+            </button>
+            <button
               onClick={handleLogout}
               className="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg backdrop-blur-md transition-all duration-200 flex items-center gap-2 shadow-lg border border-red-500"
               title="Sign Out"
@@ -438,6 +475,34 @@ export const ChatInterface = ({ hidden, ...props }) => {
             />
           </svg>
         )}
+      </button>
+
+      {/* Quiz Button - Below document option, opens Gemini-generated session quiz */}
+      <button
+        onClick={() => {
+          if (chatHistory.length === 0) {
+            showToast("Have a conversation with Adam first, then take the quiz.");
+            return;
+          }
+          setIsRetentionTestOpen(true);
+        }}
+        title="Take Quiz"
+        className="absolute left-4 top-64 bg-black bg-opacity-50 backdrop-blur-md text-white p-3 rounded-lg pointer-events-auto z-20 hover:bg-opacity-70 transition-all"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={1.5}
+          stroke="currentColor"
+          className="w-6 h-6"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
+          />
+        </svg>
       </button>
 
       {/* Chat History Panel - Collapsible with pop-up animation */}
@@ -611,6 +676,14 @@ export const ChatInterface = ({ hidden, ...props }) => {
           <RetentionTest
             chatHistory={chatHistory}
             onClose={() => setIsRetentionTestOpen(false)}
+          />
+        )}
+
+        {/* Flashcards Modal */}
+        {isFlashcardsOpen && (
+          <Flashcards
+            chatHistory={chatHistory}
+            onClose={() => setIsFlashcardsOpen(false)}
           />
         )}
 
@@ -792,6 +865,16 @@ export const ChatInterface = ({ hidden, ...props }) => {
         </div>
         )}
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-28 left-1/2 transform -translate-x-1/2 z-[60] pointer-events-auto px-4 w-full max-w-md">
+          <div className="bg-gray-900 border border-teal-500 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-cinematicFadeIn">
+            <span className="text-teal-300 text-lg flex-shrink-0">ⓘ</span>
+            <span>{toast}</span>
+          </div>
+        </div>
+      )}
 
       {/* Auth Modal */}
       {isAuthModalOpen && (

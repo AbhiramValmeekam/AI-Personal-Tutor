@@ -38,3 +38,5 @@ next-env.d.ts
 
 # visemes inference
 /bin
+# google cloud service account (private key - never commit)
+google-service-account.json

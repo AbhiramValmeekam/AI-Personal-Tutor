@@ -661,6 +661,31 @@ function extractCoreSubject(question) {
   return words.slice(startIndex, endIndex).join(' ');
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Transient Gemini overload (503) / rate limits (429) are common — retry with
+// backoff, then try a fallback model before giving up.
+async function generateWithRetry(getModel, prompt, requestId, label = "content") {
+  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  let lastError;
+  for (const modelName of models) {
+    const model = getModel(modelName);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[Gemini] [${requestId}] ${label}: ${modelName} attempt ${attempt}`);
+        return await model.generateContent(prompt);
+      } catch (err) {
+        lastError = err;
+        const status = err.status;
+        if (status !== 503 && status !== 429) throw err;
+        console.warn(`[Gemini] [${requestId}] ${modelName} returned ${status}, retrying... (${attempt}/3)`);
+        await sleep(attempt * 2000);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function generateAvatarResponse(question, language = "english") {
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   try {
@@ -672,8 +697,7 @@ async function generateAvatarResponse(question, language = "english") {
     console.log(`[Gemini] [${requestId}] Question length:`, question.length);
     console.log(`[Gemini] [${requestId}] ⚠️ CRITICAL: Response MUST be in ${language.toUpperCase()} language`);
 
-    // Use the gemini 2.5 flash model as requested
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // Model + retry handling lives in generateWithRetry (2.5-flash, fallback 2.0-flash)
 
     // Adjust template based on language - normalize first
     const normalizedLang = language.toLowerCase().trim();
@@ -812,7 +836,12 @@ ${languageSpecificTemplate}`;
     console.log(`[Gemini] [${requestId}] Full question:`, question);
     console.log(`[Gemini] [${requestId}] Language context: ${normalizedLang.toUpperCase()}`);
 
-    const result = await model.generateContent(prompt);
+    const result = await generateWithRetry(
+      (m) => genAI.getGenerativeModel({ model: m }),
+      prompt,
+      requestId,
+      "avatar"
+    );
     const response = await result.response;
     let text = response.text();
 
@@ -978,13 +1007,13 @@ ${languageSpecificTemplate}`;
       };
     }
 
-    // Return a default response in case of other errors
+    // Return an honest error message (never a fake greeting) if all retries fail
     return {
       messages: [
         {
-          text: "Hello! I'm your AI assistant, ready to help with any topic you'd like to discuss.",
-          facialExpression: "default",
-          animation: "TalkingOne"
+          text: "I'm having trouble reaching my AI brain right now — the service is overloaded. Please try again in a moment.",
+          facialExpression: "sad",
+          animation: "SadIdle"
         }
       ]
     };
@@ -1038,8 +1067,8 @@ async function generateRetentionTest(chatHistory) {
   try {
     console.log("Generating retention test based on chat history...");
 
-    // Use gemini-1.5-flash for higher quota (1500 requests/day vs 20 for 2.5-flash)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // Use gemini-2.5-flash (consistent with chat/summary paths)
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Format the chat history for the prompt
     const formattedHistory = chatHistory.map(msg => {
@@ -1097,26 +1126,32 @@ async function generateRetentionTest(chatHistory) {
 
     // Try to parse the JSON response
     try {
-      // Extract JSON from potential markdown code blocks
-      let cleanTestText = testText.trim();
-      if (cleanTestText.startsWith("```json")) {
-        cleanTestText = cleanTestText.substring(7);
-      }
-      if (cleanTestText.endsWith("```")) {
-        cleanTestText = cleanTestText.substring(0, cleanTestText.length - 3);
+      // Strip all markdown fences, then extract the first {...} JSON block
+      let cleanTestText = testText.trim().replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+      const start = cleanTestText.indexOf("{");
+      const end = cleanTestText.lastIndexOf("}");
+      if (start !== -1 && end !== -1 && end > start) {
+        cleanTestText = cleanTestText.slice(start, end + 1);
       }
 
-      const parsedTest = JSON.parse(cleanTestText);
+      let parsedTest;
+      try {
+        parsedTest = JSON.parse(cleanTestText);
+      } catch (e) {
+        // Repair common Gemini slips: trailing commas before } or ]
+        parsedTest = JSON.parse(cleanTestText.replace(/,\s*([}\]])/g, "$1"));
+      }
+      if (!parsedTest.questions || !Array.isArray(parsedTest.questions) || parsedTest.questions.length === 0) {
+        throw new Error("Gemini returned zero questions");
+      }
       console.log("Successfully parsed and validated retention test");
       return parsedTest;
     } catch (parseError) {
       console.error("Error parsing retention test response:", parseError);
       console.error("Raw response that failed to parse:", testText);
-      // Return a default test structure
-      return {
-        testTitle: "General Knowledge Test",
-        questions: []
-      };
+      // Throw so the endpoint returns 500 and the UI shows error + retry
+      // instead of an empty quiz that crashes the question view.
+      throw new Error("Failed to generate quiz questions from this session. Please try again.");
     }
   } catch (error) {
     console.error("Error generating retention test:", error);
@@ -1129,8 +1164,8 @@ async function generatePersonalizedFeedback(testResults, chatHistory) {
   try {
     console.log("Generating personalized feedback based on test results...");
 
-    // Use gemini-1.5-flash for higher quota
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // Use gemini-2.5-flash (1.5-flash is retired — 404s on v1beta)
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Format the chat history for the prompt
     const formattedHistory = chatHistory.map(msg => {
@@ -1174,4 +1209,81 @@ async function generatePersonalizedFeedback(testResults, chatHistory) {
   }
 }
 
-export { generateAvatarResponse, generateChatSummary, generateRetentionTest, generatePersonalizedFeedback, extractCoreSubject, fetchWikimediaImages, generateImageUrls };
+async function generateFlashcards(chatHistory) {
+  try {
+    console.log("Generating flashcards based on chat history...");
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const formattedHistory = chatHistory.map(msg => {
+      const sender = msg.sender === 'user' ? 'User' : msg.sender === 'ai' ? 'AI Assistant' : 'System';
+      return `${sender}: ${msg.text}`;
+    }).join('\n');
+
+    const flashcardsTemplate = `
+    You are an expert educator who creates concise revision flashcards.
+    Based on the conversation history below, create flashcards that help the user quickly revise the key topics.
+
+    Conversation History:
+    ${formattedHistory}
+
+    Guidelines:
+    1. Create 8 to 12 flashcards covering the distinct key topics discussed
+    2. Front: a short question, term, or prompt (one line)
+    3. Back: the crisp answer or explanation (1-3 sentences)
+    4. Mix definition cards, question cards, and key-fact cards
+    5. Include the main topic each card belongs to
+    6. Format the response as valid JSON with this exact structure:
+
+    {
+      "deckTitle": "A descriptive title for the deck based on the conversation topics",
+      "cards": [
+        {
+          "id": 1,
+          "front": "Question, term, or prompt",
+          "back": "Crisp answer or explanation",
+          "topic": "The main topic this card covers"
+        }
+      ]
+    }
+
+    Return only valid JSON, no markdown formatting or extra text.
+    `;
+
+    console.log("Sending flashcards prompt to Gemini...");
+    const result = await model.generateContent(flashcardsTemplate);
+    const response = await result.response;
+    const deckText = response.text();
+
+    try {
+      // Strip all markdown fences, then extract the first {...} JSON block
+      let cleanDeckText = deckText.trim().replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+      const start = cleanDeckText.indexOf("{");
+      const end = cleanDeckText.lastIndexOf("}");
+      if (start !== -1 && end !== -1 && end > start) {
+        cleanDeckText = cleanDeckText.slice(start, end + 1);
+      }
+
+      let parsedDeck;
+      try {
+        parsedDeck = JSON.parse(cleanDeckText);
+      } catch (e) {
+        // Repair common Gemini slips: trailing commas before } or ]
+        parsedDeck = JSON.parse(cleanDeckText.replace(/,\s*([}\]])/g, "$1"));
+      }
+      if (!parsedDeck.cards || !Array.isArray(parsedDeck.cards) || parsedDeck.cards.length === 0) {
+        throw new Error("Gemini returned zero cards");
+      }
+      console.log("Successfully parsed and validated flashcards");
+      return parsedDeck;
+    } catch (parseError) {
+      console.error("Error parsing flashcards response:", parseError);
+      throw new Error("Failed to generate flashcards from this session. Please try again.");
+    }
+  } catch (error) {
+    console.error("Error generating flashcards:", error);
+    throw error;
+  }
+}
+
+export { generateAvatarResponse, generateChatSummary, generateRetentionTest, generatePersonalizedFeedback, generateFlashcards, extractCoreSubject, fetchWikimediaImages, generateImageUrls };

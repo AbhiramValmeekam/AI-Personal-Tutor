@@ -15,13 +15,64 @@ export function Avatar(props) {
   const { message, onMessagePlayed, setCurrentAudio } = useSpeech(); // Added setCurrentAudio
   const [lipsync, setLipsync] = useState();
   const [setupMode, setSetupMode] = useState(false);
+  const pendingAudio = useRef(null);
+  const pendingTimer = useRef(null);
+
+  const clearPendingAudio = () => {
+    pendingAudio.current = null;
+    if (pendingTimer.current) {
+      clearTimeout(pendingTimer.current);
+      pendingTimer.current = null;
+    }
+    window.removeEventListener("pointerdown", tryPendingPlay);
+    window.removeEventListener("keydown", tryPendingPlay);
+  };
+
+  const tryPendingPlay = () => {
+    const a = pendingAudio.current;
+    if (!a) return;
+    a.play().then(() => {
+      console.log("Pending audio started after user gesture");
+      clearPendingAudio();
+    }).catch(() => {
+      // Still blocked — keep waiting for the next gesture
+    });
+  };
+
+  const failAudio = () => {
+    clearPendingAudio();
+    window.dispatchEvent(new CustomEvent("adam:audio-failed"));
+    onMessagePlayed();
+  };
+
+  // Browser autoplay policy can reject play() long after the user's click
+  // (backend round-trip eats the transient activation). Park the audio and
+  // resume on the next tap instead of silently skipping the reply.
+  const waitForGesture = (audioEl) => {
+    pendingAudio.current = audioEl;
+    window.dispatchEvent(new CustomEvent("adam:audio-blocked"));
+    window.addEventListener("pointerdown", tryPendingPlay);
+    window.addEventListener("keydown", tryPendingPlay);
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    pendingTimer.current = setTimeout(() => {
+      if (pendingAudio.current === audioEl) {
+        console.warn("Audio still blocked after 45s, skipping message");
+        failAudio();
+      }
+    }, 45000);
+  };
 
   useEffect(() => {
     if (!message) {
+      clearPendingAudio();
       setAnimation("Idle");
       return;
     }
     
+    let cancelled = false;
+    const createdAudios = [];
+    let noAudioTimer = null;
+
     // Set facial expression and animation
     setFacialExpression(message.facialExpression || "default");
     setAnimation(message.animation || "TalkingOne");
@@ -42,6 +93,7 @@ export function Avatar(props) {
         console.log(`Creating audio with format: ${audioFormat} (MIME: ${mimeType})`);
         
         const audio = new Audio(`data:${mimeType};base64,${message.audio}`);
+        createdAudios.push(audio);
         
         // Add event listeners for debugging and playback
         audio.addEventListener('loadedmetadata', () => {
@@ -50,59 +102,56 @@ export function Avatar(props) {
         
         audio.addEventListener('play', () => {
           console.log('Audio started playing');
+          clearPendingAudio();
         });
         
         // Handle audio loading and playback
-        const handleCanPlay = () => {
-          console.log("Audio ready, duration:", audio.duration, "format:", audioFormat);
-          audio.play().catch(error => {
-            console.error("Error playing audio:", error);
-            // Try alternative format as fallback
-            const altFormat = audioFormat === "wav" ? "mp3" : "wav";
-            const altMimeType = altFormat === "wav" ? "audio/wav" : "audio/mpeg";
-            console.log(`Trying fallback format: ${altFormat}`);
-            const fallbackAudio = new Audio(`data:${altMimeType};base64,${message.audio}`);
-            fallbackAudio.addEventListener('canplay', () => {
-              fallbackAudio.play().catch(err => {
-                console.error(`${altFormat} format also failed:`, err);
-                onMessagePlayed();
-              });
-            }, { once: true });
-            fallbackAudio.addEventListener('error', () => {
-              console.error("Both formats failed");
-              onMessagePlayed();
-            });
-            setAudio(fallbackAudio);
-            setCurrentAudio(fallbackAudio);
-            fallbackAudio.onended = () => {
-              console.log("Audio finished playing");
-              onMessagePlayed();
-            };
+        const playWithGestureFallback = (audioEl, label) => {
+          if (cancelled) return;
+          audioEl.play().then(() => {
+            if (cancelled) { try { audioEl.pause(); } catch (_) {} return; }
+            clearPendingAudio();
+          }).catch((err) => {
+            if (cancelled) return;
+            console.error(`Error playing audio (${label}):`, err);
+            if (err && err.name === "NotAllowedError") {
+              console.log("Autoplay blocked — waiting for user gesture");
+              setAudio(audioEl);
+              setCurrentAudio(audioEl);
+              waitForGesture(audioEl);
+              return;
+            }
+            failAudio();
           });
         };
-        
+
+        const handleCanPlay = () => {
+          console.log("Audio ready, duration:", audio.duration, "format:", audioFormat);
+          playWithGestureFallback(audio, audioFormat);
+        };
+
         audio.addEventListener('canplay', handleCanPlay, { once: true });
-        
+
         audio.addEventListener('error', (e) => {
-          console.error(`${audioFormat} audio error, trying alternative format:`, e);
+          console.error(`${audioFormat} audio failed to decode, trying alternative format:`, e);
           // Try alternative format as fallback
           const altFormat = audioFormat === "wav" ? "mp3" : "wav";
           const altMimeType = altFormat === "wav" ? "audio/wav" : "audio/mpeg";
           const fallbackAudio = new Audio(`data:${altMimeType};base64,${message.audio}`);
+          createdAudios.push(fallbackAudio);
           fallbackAudio.addEventListener('canplay', () => {
-            fallbackAudio.play().catch(err => {
-              console.error(`${altFormat} format also failed:`, err);
-              onMessagePlayed();
-            });
+            playWithGestureFallback(fallbackAudio, altFormat);
           }, { once: true });
           fallbackAudio.addEventListener('error', () => {
-            console.error("Both formats failed");
-            onMessagePlayed();
+            console.error("Both formats failed to decode");
+            failAudio();
           });
           setAudio(fallbackAudio);
           setCurrentAudio(fallbackAudio);
           fallbackAudio.onended = () => {
+            if (cancelled) return;
             console.log("Audio finished playing");
+            clearPendingAudio();
             onMessagePlayed();
           };
         });
@@ -114,7 +163,9 @@ export function Avatar(props) {
         audio.load();
         
         audio.onended = () => {
+          if (cancelled) return;
           console.log("Audio finished playing");
+          clearPendingAudio();
           onMessagePlayed();
         };
       } catch (error) {
@@ -124,8 +175,14 @@ export function Avatar(props) {
     } else {
       // If no audio, still call onMessagePlayed after a delay
       console.log("No audio data, calling onMessagePlayed after delay");
-      setTimeout(onMessagePlayed, 2000);
+      noAudioTimer = setTimeout(() => { if (!cancelled) onMessagePlayed(); }, 2000);
     }
+    return () => {
+      cancelled = true;
+      if (noAudioTimer) clearTimeout(noAudioTimer);
+      clearPendingAudio();
+      createdAudios.forEach((a) => { try { a.pause(); a.onended = null; } catch (_) {} });
+    };
   }, [message]);
 
   const group = useRef();

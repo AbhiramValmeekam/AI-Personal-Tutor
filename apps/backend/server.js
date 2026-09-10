@@ -4,7 +4,7 @@ import multer from "multer";
 import fs from "fs";
 import { tmpdir } from "os";
 import { join, extname } from "path";
-import { generateAvatarResponse, generateChatSummary, generateRetentionTest, generatePersonalizedFeedback } from "./modules/gemini.mjs";
+import { generateAvatarResponse, generateChatSummary, generateRetentionTest, generatePersonalizedFeedback, generateFlashcards } from "./modules/gemini.mjs";
 // TTS removed
 import { lipSync } from "./modules/lip-sync.mjs";
 import { convertAudioToText } from "./modules/stt.mjs";
@@ -857,6 +857,30 @@ app.post("/retention-test/feedback", async (req, res) => {
   } catch (error) {
     console.error("Error generating personalized feedback:", error);
     res.status(500).send({ error: "Failed to generate personalized feedback" });
+  }
+});
+
+// POST /flashcards/generate — Gemini flashcards from session chat history
+app.post("/flashcards/generate", async (req, res) => {
+  try {
+    const { chatHistory } = req.body;
+
+    if (!chatHistory || !Array.isArray(chatHistory)) {
+      return res.status(400).send({ error: "Invalid chat history provided" });
+    }
+
+    if (chatHistory.length === 0) {
+      return res.status(400).send({ error: "Chat history is empty. Please have a conversation first." });
+    }
+
+    console.log("Received flashcards request with", chatHistory.length, "messages");
+
+    const deck = await generateFlashcards(chatHistory);
+
+    res.send(deck);
+  } catch (error) {
+    console.error("Error generating flashcards:", error);
+    res.status(500).send({ error: "Failed to generate flashcards" });
   }
 });
 
