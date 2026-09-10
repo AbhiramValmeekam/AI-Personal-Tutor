@@ -264,22 +264,26 @@ async function synthesizeSpeech(text, language, outputPath) {
       selectedVoice = configuredVoice;
       console.log(`[Google TTS] ✅ Found configured voice: ${selectedVoice.name}`);
     } else {
-      // Fallback: find a Standard voice with matching gender
+      // Fallback: find a Standard voice with matching gender (must be language-specific)
       console.log(`[Google TTS] ⚠️ Configured voice '${voiceConfig.name}' not found. Searching for alternative...`);
-      
+
       // Try to find Standard voice with matching gender (must be language-specific)
-      const standardVoice = languageSpecificVoices.find(v => 
-        v.name.includes('Standard') && 
+      const standardVoice = languageSpecificVoices.find(v =>
+        v.name.includes('Standard') &&
         v.ssmlGender === voiceConfig.ssmlGender
       );
-      
+
       if (standardVoice) {
         selectedVoice = standardVoice;
         console.log(`[Google TTS] ✅ Found alternative Standard voice: ${selectedVoice.name}`);
       } else {
-        // Last resort: use first language-specific voice (NOT first available - might be wrong language!)
-        selectedVoice = languageSpecificVoices[0];
-        console.log(`[Google TTS] ⚠️ Using first language-specific voice: ${selectedVoice.name}`);
+        // Male voice required — never fall back to a female voice
+        const maleVoice = languageSpecificVoices.find(v => v.ssmlGender === 'MALE');
+        if (!maleVoice) {
+          throw new Error(`No MALE voice available for language ${normalizedLang}. Refusing female fallback.`);
+        }
+        selectedVoice = maleVoice;
+        console.log(`[Google TTS] ⚠️ Using male voice: ${selectedVoice.name}`);
       }
     }
     

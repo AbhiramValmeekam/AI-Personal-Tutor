@@ -111,6 +111,8 @@ async function convertTextToSpeech({ text, fileName, language = "english" }) {
         const psScript = `
           Add-Type -AssemblyName System.Speech
           $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          # Prefer a male voice (default Windows voice is female)
+          try { $synth.SelectVoice('Microsoft David Desktop') } catch {}
           # Set voice properties for better quality
           $synth.Rate = 0
           $synth.Volume = 100
