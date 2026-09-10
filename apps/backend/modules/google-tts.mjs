@@ -67,7 +67,9 @@ const LANGUAGE_MAP = {
   'hindi': 'hi-IN',
   'hi': 'hi-IN',
   'telugu': 'te-IN',
-  'te': 'te-IN'
+  'te': 'te-IN',
+  'english': 'en-IN',
+  'en': 'en-IN'
 };
 
 /**
@@ -114,6 +116,11 @@ const VOICE_CONFIG = {
   'te-IN': {
     languageCode: 'te-IN',
     name: 'te-IN-Standard-B', // Standard MALE voice for Telugu (Standard-A is FEMALE)
+    ssmlGender: 'MALE'
+  },
+  'en-IN': {
+    languageCode: 'en-IN',
+    name: 'en-IN-Standard-B', // Standard MALE voice for English (India)
     ssmlGender: 'MALE'
   }
 };
@@ -207,7 +214,7 @@ async function synthesizeSpeech(text, language, outputPath) {
     // Normalize language code
     const normalizedLang = LANGUAGE_MAP[language.toLowerCase()];
     if (!normalizedLang) {
-      throw new Error(`Unsupported language: ${language}. Supported: hindi, hi, telugu, te`);
+      throw new Error(`Unsupported language: ${language}. Supported: hindi, hi, telugu, te, english, en`);
     }
 
     // Get voice configuration
@@ -354,7 +361,7 @@ async function synthesizeSpeech(text, language, outputPath) {
     
     // Log final validation - CRITICAL CHECKS
     console.log(`[Google TTS] ===== FINAL VALIDATION (CRITICAL) =====`);
-    console.log(`[Google TTS] Language Code: ${voiceConfig.languageCode} ${voiceConfig.languageCode === 'te-IN' || voiceConfig.languageCode === 'hi-IN' ? '✅' : '❌ WRONG!'}`);
+    console.log(`[Google TTS] Language Code: ${voiceConfig.languageCode} ${['te-IN', 'hi-IN', 'en-IN'].includes(voiceConfig.languageCode) ? '✅' : '❌ WRONG!'}`);
     console.log(`[Google TTS] Voice Name: ${selectedVoice.name}`);
     console.log(`[Google TTS] Voice matches language: ${selectedVoice.name.startsWith(voiceConfig.languageCode + '-') ? '✅ YES' : '❌ NO - WILL FALLBACK TO ENGLISH!'}`);
     console.log(`[Google TTS] Text contains correct script: ${textHasCorrectScript ? '✅ YES' : '⚠️ WARNING - but forcing correct voice anyway'}`);

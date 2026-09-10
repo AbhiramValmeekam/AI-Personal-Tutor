@@ -57,6 +57,24 @@ async function convertTextToSpeech({ text, fileName, language = "english" }) {
   // Use local TTS for English or as fallback
   console.log(`[TTS] Using local TTS for ${language}`);
 
+  // English: prefer Google Cloud TTS when credentials exist — it's the only
+  // voice engine available on servers without system TTS (Render/Linux).
+  // Falls through to local system TTS when Google is unreachable.
+  if (lang === "english" || lang === "en") {
+    try {
+      console.log(`[TTS] Trying Google Cloud TTS for English first...`);
+      const mp3FileName = fileName.endsWith('.mp3') ? fileName : fileName.replace(/\.(wav|aiff)$/, '.mp3');
+      await googleTTS(text, 'english', mp3FileName);
+      if (fs.existsSync(mp3FileName) && fs.statSync(mp3FileName).size > 1000) {
+        console.log(`[TTS] ✅ Google Cloud TTS successful for English: ${mp3FileName}`);
+        return;
+      }
+      throw new Error('Google TTS file missing or empty');
+    } catch (error) {
+      console.warn(`[TTS] Google Cloud TTS unavailable for English, falling back to local TTS:`, error.message);
+    }
+  }
+
   try {
     console.log(`Converting text to speech: ${text.substring(0, 50)}...`);
 
