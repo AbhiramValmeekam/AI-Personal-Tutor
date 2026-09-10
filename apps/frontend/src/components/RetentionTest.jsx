@@ -4,7 +4,7 @@ import { useSpeech } from "../hooks/useSpeech";
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3002";
 
 export const RetentionTest = ({ chatHistory, onClose }) => {
-  const { tts, stopAudio } = useSpeech();
+  const { stopAudio } = useSpeech();
   const [test, setTest] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
@@ -127,9 +127,7 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
 
       const feedbackData = await response.json();
       setFeedback(feedbackData.feedback);
-      
-      // Speak the feedback through the avatar
-      tts(feedbackData.feedback);
+      // Marks stay on screen only — never spoken aloud by the avatar
     } catch (err) {
       console.error("Error generating feedback:", err);
       setError("Failed to generate feedback. Please try again.");
@@ -334,9 +332,9 @@ export const RetentionTest = ({ chatHistory, onClose }) => {
               </button>
               <button
                 onClick={onClose}
-                className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-colors font-semibold"
               >
-                Close
+                Back to Adam
               </button>
             </div>
           </div>

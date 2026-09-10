@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useRef } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3002";
 
@@ -134,51 +134,75 @@ export const SpeechProvider = ({ children }) => {
     };
   };
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then((stream) => {
-          // Detect supported codecs
-          const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus'
-            : 'audio/webm';
-
-          console.log(`Using MIME type for recording: ${mimeType}`);
-
-          const newMediaRecorder = new MediaRecorder(stream, { mimeType });
-          newMediaRecorder.onstart = initiateRecording;
-          newMediaRecorder.ondataavailable = onDataAvailable;
-          newMediaRecorder.onstop = async () => {
-            console.log(`Recording stopped. Total chunks to process: ${chunksRef.current.length}`);
-            const audioBlob = new Blob(chunksRef.current, { type: mimeType });
-            console.log(`Final audio blob size: ${audioBlob.size} bytes`);
-            console.log(`Sending audio for language: ${selectedLanguageRef.current}`);
-
-            if (audioBlob.size === 0) {
-              console.error("Recorded audio blob is empty!");
-              return;
-            }
-
-            try {
-              await sendAudioData(audioBlob);
-            } catch (error) {
-              console.error("Failed to send audio data:", error);
-            }
-          };
-          setMediaRecorder(newMediaRecorder);
-        })
-        .catch((err) => {
-          console.error("Error accessing microphone:", err);
-          // Potential UI notification for blocked microphone
-        });
+  const initRecorder = useCallback(() => {
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      window.dispatchEvent(new CustomEvent("adam:mic-error", { detail: "This browser can't access a microphone. Please use Chrome or Edge." }));
+      return Promise.resolve(null);
     }
+    return navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        // Detect supported codecs
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+
+        console.log(`Using MIME type for recording: ${mimeType}`);
+
+        const newMediaRecorder = new MediaRecorder(stream, { mimeType });
+        newMediaRecorder.onstart = initiateRecording;
+        newMediaRecorder.ondataavailable = onDataAvailable;
+        newMediaRecorder.onstop = async () => {
+          console.log(`Recording stopped. Total chunks to process: ${chunksRef.current.length}`);
+          const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+          console.log(`Final audio blob size: ${audioBlob.size} bytes`);
+          console.log(`Sending audio for language: ${selectedLanguageRef.current}`);
+
+          if (audioBlob.size === 0) {
+            console.error("Recorded audio blob is empty!");
+            return;
+          }
+
+          try {
+            await sendAudioData(audioBlob);
+          } catch (error) {
+            console.error("Failed to send audio data:", error);
+          }
+        };
+        setMediaRecorder(newMediaRecorder);
+        return newMediaRecorder;
+      })
+      .catch((err) => {
+        console.error("Error accessing microphone:", err);
+        const hint = err && err.name === "NotAllowedError"
+          ? "Microphone is blocked — click the tune/lock icon in the address bar, set Microphone to Allow, then reload."
+          : err && err.name === "NotFoundError"
+            ? "No microphone found — plug one in and try again."
+            : "Could not access the microphone. Make sure it's connected and not used by another app.";
+        window.dispatchEvent(new CustomEvent("adam:mic-error", { detail: hint }));
+        return null;
+      });
   }, []);
 
-  const startRecording = () => {
-    if (mediaRecorder) {
-      mediaRecorder.start();
-      setRecording(true);
+  useEffect(() => {
+    initRecorder();
+  }, [initRecorder]);
+
+  const startRecording = async () => {
+    let recorder = mediaRecorder;
+    if (!recorder) {
+      // Permission was never granted (or was blocked on load) — ask now,
+      // while the tap counts as a user gesture for the browser prompt.
+      window.dispatchEvent(new CustomEvent("adam:mic-requesting"));
+      recorder = await initRecorder();
+    }
+    if (recorder) {
+      try {
+        recorder.start();
+        setRecording(true);
+      } catch (e) {
+        console.error("Failed to start recording:", e);
+      }
     }
   };
 

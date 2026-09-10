@@ -54,6 +54,12 @@ const lipSync = async (response, language = "english") => {
       const fileName = resolve(backendDir, `audios/message_${index}.mp3`);
       const wavFileName = resolve(backendDir, `audios/message_${index}.wav`);
 
+      // Purge stale audio from previous turns — otherwise the wav-first
+      // lookup below can serve last turn's file instead of this turn's
+      [fileName, wavFileName].forEach((f) => {
+        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (_) {}
+      });
+
       console.log(`[LipSync] Processing message ${index} in ${language}`);
 
       const cleanText = cleanTextForTTS(message.text);

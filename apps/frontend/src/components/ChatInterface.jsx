@@ -106,15 +106,21 @@ export const ChatInterface = ({ hidden, ...props }) => {
     toastTimer.current = setTimeout(() => setToast(""), 3500);
   };
 
-  // Surface avatar voice-playback problems as toasts
+  // Surface avatar voice-playback + microphone problems as toasts
   useEffect(() => {
     const onBlocked = () => showToast("Browser blocked autoplay — tap anywhere to hear Adam's voice.");
     const onFailed = () => showToast("Voice playback failed for this reply — check your volume and try again.");
+    const onMicError = (e) => showToast((e && e.detail) || "Microphone unavailable.");
+    const onMicRequesting = () => showToast("Requesting microphone access — allow it in the browser prompt.");
     window.addEventListener("adam:audio-blocked", onBlocked);
     window.addEventListener("adam:audio-failed", onFailed);
+    window.addEventListener("adam:mic-error", onMicError);
+    window.addEventListener("adam:mic-requesting", onMicRequesting);
     return () => {
       window.removeEventListener("adam:audio-blocked", onBlocked);
       window.removeEventListener("adam:audio-failed", onFailed);
+      window.removeEventListener("adam:mic-error", onMicError);
+      window.removeEventListener("adam:mic-requesting", onMicRequesting);
     };
   }, []);
 

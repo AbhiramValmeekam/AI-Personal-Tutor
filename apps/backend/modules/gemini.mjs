@@ -105,6 +105,7 @@ async function fetchWikimediaImages(searchQuery, count = 3) {
     console.log(`Fetching images from Wikimedia for query: "${searchQuery}"`);
 
     const response = await fetch(apiUrl, {
+      signal: AbortSignal.timeout(7000),
       headers: {
         'User-Agent': 'DigitalHumanApp/1.0 (Educational AI Avatar - Highly Relevant Image Search)'
       }
@@ -218,6 +219,7 @@ async function fetchPexelsImages(searchQuery, count = 2) {
     const response = await fetch(
       `https://api.pexels.com/v1/search?query=${encodeURIComponent(searchQuery)}&per_page=${count}&orientation=landscape`,
       {
+        signal: AbortSignal.timeout(7000),
         headers: {
           'Authorization': apiKey
         }
@@ -288,7 +290,7 @@ ${responseText ? `Response context: "${responseText.substring(0, 200)}..."` : ''
 
 Extract the most relevant image search terms:`;
 
-    const result = await model.generateContent(prompt);
+    const result = await generateWithRetry((m) => genAI.getGenerativeModel({ model: m }), prompt, "imgterms", "image-terms");
     const response = await result.response;
     const extractedTerms = response.text().trim();
 
@@ -347,8 +349,16 @@ function cleanSearchTerms(terms) {
 async function generateImageUrls(question, responseText) {
   console.log(`🔍 Generating relevant images for question: "${question}"`);
 
-  // Use Gemini to extract the most relevant search terms for images
-  let searchTerms = await extractImageSearchTerms(question, responseText);
+  // When the primary model is breaker-tripped, skip this extra Gemini call and
+  // use the free local heuristic — saves quota for answers, which matter more.
+  let searchTerms = "";
+  if (Date.now() >= primaryDownUntil) {
+    try {
+      searchTerms = await extractImageSearchTerms(question, responseText);
+    } catch (e) {
+      console.log(`⚠️  Gemini term extraction failed, using fallback extraction`);
+    }
+  }
 
   // Fallback to core subject extraction if Gemini extraction fails
   if (!searchTerms || searchTerms.length < 3) {
@@ -663,14 +673,21 @@ function extractCoreSubject(question) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Transient Gemini overload (503) / rate limits (429) are common — retry with
-// backoff, then try a fallback model before giving up.
-async function generateWithRetry(getModel, prompt, requestId, label = "content") {
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+// Transient Gemini overload (503) / rate limits (429) are common.
+// Circuit breaker: once the primary fails, skip it for 5 minutes and go
+// straight to the fallback instead of burning seconds on doomed retries.
+let primaryDownUntil = 0;
+async function generateWithRetry(getModel, prompt, requestId = "req", label = "content") {
+  const primaryDown = Date.now() < primaryDownUntil;
+  const models = primaryDown
+    ? ["gemini-flash-latest"]
+    : ["gemini-2.5-flash", "gemini-flash-latest"];
   let lastError;
   for (const modelName of models) {
+    const isPrimary = modelName === "gemini-2.5-flash";
     const model = getModel(modelName);
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const attempts = isPrimary ? 2 : 3;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         console.log(`[Gemini] [${requestId}] ${label}: ${modelName} attempt ${attempt}`);
         return await model.generateContent(prompt);
@@ -678,8 +695,9 @@ async function generateWithRetry(getModel, prompt, requestId, label = "content")
         lastError = err;
         const status = err.status;
         if (status !== 503 && status !== 429) throw err;
-        console.warn(`[Gemini] [${requestId}] ${modelName} returned ${status}, retrying... (${attempt}/3)`);
-        await sleep(attempt * 2000);
+        if (isPrimary) primaryDownUntil = Date.now() + 5 * 60 * 1000;
+        console.warn(`[Gemini] [${requestId}] ${modelName} returned ${status}, retrying... (${attempt}/${attempts})`);
+        await sleep(attempt * 1500);
       }
     }
   }
@@ -697,7 +715,7 @@ async function generateAvatarResponse(question, language = "english") {
     console.log(`[Gemini] [${requestId}] Question length:`, question.length);
     console.log(`[Gemini] [${requestId}] ⚠️ CRITICAL: Response MUST be in ${language.toUpperCase()} language`);
 
-    // Model + retry handling lives in generateWithRetry (2.5-flash, fallback 2.0-flash)
+    // Model + retry handling lives in generateWithRetry (2.5-flash, fallback flash-latest)
 
     // Adjust template based on language - normalize first
     const normalizedLang = language.toLowerCase().trim();
@@ -940,10 +958,8 @@ ${languageSpecificTemplate}`;
         }
       }
 
-      // Add image URLs to the response
-      const responseText = validatedResponse.messages.map(m => m.text).join(' ');
-      validatedResponse.images = await generateImageUrls(question, responseText);
-      console.log(`[Gemini] [${requestId}] Generated ${validatedResponse.images.length} images`);
+      // Images are fetched in parallel with lip-sync by the server — don't block the reply on them
+      validatedResponse.images = [];
 
       return validatedResponse;
     } catch (parseError) {
@@ -980,7 +996,7 @@ ${languageSpecificTemplate}`;
           }
         ]
       };
-      defaultResponse.images = await generateImageUrls(question, cleanText);
+      defaultResponse.images = [];
       return defaultResponse;
     }
   } catch (error) {
@@ -1050,7 +1066,7 @@ ${formattedHistory}
 Please provide a summary of this conversation in a natural, readable format.`;
 
     console.log("Sending summary prompt to Gemini...");
-    const result = await model.generateContent(summaryPrompt);
+    const result = await generateWithRetry((m) => genAI.getGenerativeModel({ model: m }), summaryPrompt, "summary", "summary");
     const response = await result.response;
     const summaryText = response.text();
 
@@ -1118,7 +1134,7 @@ async function generateRetentionTest(chatHistory) {
     `;
 
     console.log("Sending retention test prompt to Gemini...");
-    const result = await model.generateContent(retentionTestTemplate);
+    const result = await generateWithRetry((m) => genAI.getGenerativeModel({ model: m }), retentionTestTemplate, "quiz", "quiz");
     const response = await result.response;
     const testText = response.text();
 
@@ -1197,7 +1213,7 @@ async function generatePersonalizedFeedback(testResults, chatHistory) {
     `;
 
     console.log("Sending feedback prompt to Gemini...");
-    const result = await model.generateContent(feedbackTemplate);
+    const result = await generateWithRetry((m) => genAI.getGenerativeModel({ model: m }), feedbackTemplate, "feedback", "feedback");
     const response = await result.response;
     const feedbackText = response.text();
 
@@ -1251,7 +1267,7 @@ async function generateFlashcards(chatHistory) {
     `;
 
     console.log("Sending flashcards prompt to Gemini...");
-    const result = await model.generateContent(flashcardsTemplate);
+    const result = await generateWithRetry((m) => genAI.getGenerativeModel({ model: m }), flashcardsTemplate, "flashcards", "flashcards");
     const response = await result.response;
     const deckText = response.text();
 

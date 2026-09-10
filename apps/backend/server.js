@@ -4,7 +4,7 @@ import multer from "multer";
 import fs from "fs";
 import { tmpdir } from "os";
 import { join, extname } from "path";
-import { generateAvatarResponse, generateChatSummary, generateRetentionTest, generatePersonalizedFeedback, generateFlashcards } from "./modules/gemini.mjs";
+import { generateAvatarResponse, generateChatSummary, generateRetentionTest, generatePersonalizedFeedback, generateFlashcards, generateImageUrls } from "./modules/gemini.mjs";
 // TTS removed
 import { lipSync } from "./modules/lip-sync.mjs";
 import { convertAudioToText } from "./modules/stt.mjs";
@@ -309,8 +309,16 @@ app.post("/tts", async (req, res) => {
       });
     }
 
-    // Apply lip sync to all messages with language parameter
-    const syncedResponse = await lipSync(geminiResponse, language);
+    // Render voice (lip sync) and fetch images in parallel — images used to block the reply
+    const responseText = geminiResponse.messages.map(m => m.text).join(' ');
+    const [syncedResponse, images] = await Promise.all([
+      lipSync(geminiResponse, language),
+      generateImageUrls(question, responseText).catch((e) => {
+        console.error("Image fetch failed, continuing without images:", e.message);
+        return [];
+      })
+    ]);
+    syncedResponse.images = images;
 
     // Cache the response
     responseCache.set(cacheKey, {
@@ -491,9 +499,17 @@ app.post("/sts", async (req, res) => {
       return;
     }
 
-    // Apply lip sync with language parameter
+    // Render voice (lip sync) and fetch images in parallel — images used to block the reply
     console.log("Applying lip sync with language:", language);
-    const syncedResponse = await lipSync(geminiResponse, language);
+    const stsResponseText = geminiResponse.messages.map(m => m.text).join(' ');
+    const [syncedResponse, stsImages] = await Promise.all([
+      lipSync(geminiResponse, language),
+      generateImageUrls(userMessage, stsResponseText).catch((e) => {
+        console.error("Image fetch failed, continuing without images:", e.message);
+        return [];
+      })
+    ]);
+    syncedResponse.images = stsImages;
     console.log("Lip sync completed");
 
     // Cache the response

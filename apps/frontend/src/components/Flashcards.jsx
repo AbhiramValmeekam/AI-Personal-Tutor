@@ -192,23 +192,57 @@ export const Flashcards = ({ chatHistory, onClose }) => {
           ></div>
         </div>
 
-        {/* Card */}
-        <button
-          onClick={() => setFlipped((f) => !f)}
-          className="w-full text-left bg-gray-700 hover:bg-gray-600 transition-colors rounded-xl p-8 min-h-[220px] flex flex-col justify-center items-center cursor-pointer border border-gray-600"
-        >
-          <span className="text-xs uppercase tracking-widest text-teal-300 mb-3">
-            {card.topic} · {flipped ? "Answer" : "Question"} — click to flip
-          </span>
-          <p className="text-xl md:text-2xl font-medium text-white text-center leading-relaxed">
-            {flipped ? card.back : card.front}
-          </p>
-          {known[card.id] !== undefined && (
-            <span className={`mt-4 text-xs font-semibold px-3 py-1 rounded-full ${known[card.id] ? "bg-green-900 text-green-200" : "bg-amber-900 text-amber-200"}`}>
-              {known[card.id] ? "Known" : "Still learning"}
-            </span>
-          )}
-        </button>
+        {/* Card — dynamic 3D flip */}
+        <div style={{ perspective: "1200px" }}>
+          <button
+            onClick={() => setFlipped((f) => !f)}
+            className="w-full cursor-pointer bg-transparent border-0 p-0 text-left block"
+          >
+            <div
+              className="relative w-full min-h-[240px]"
+              style={{
+                transformStyle: "preserve-3d",
+                transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                transition: "transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1)"
+              }}
+            >
+              {/* Front — question */}
+              <div
+                className="absolute inset-0 bg-gray-700 hover:bg-gray-600 transition-colors rounded-xl p-8 flex flex-col justify-center items-center border border-gray-600 overflow-y-auto"
+                style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+              >
+                <span className="text-xs uppercase tracking-widest text-teal-300 mb-3">
+                  {card.topic} · Question — click to flip
+                </span>
+                <p className="text-xl md:text-2xl font-medium text-white text-center leading-relaxed">
+                  {card.front}
+                </p>
+                {known[card.id] !== undefined && (
+                  <span className={`mt-4 text-xs font-semibold px-3 py-1 rounded-full ${known[card.id] ? "bg-green-900 text-green-200" : "bg-amber-900 text-amber-200"}`}>
+                    {known[card.id] ? "Known" : "Still learning"}
+                  </span>
+                )}
+              </div>
+              {/* Back — answer */}
+              <div
+                className="absolute inset-0 bg-teal-900 rounded-xl p-8 flex flex-col justify-center items-center border border-teal-600 overflow-y-auto"
+                style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+              >
+                <span className="text-xs uppercase tracking-widest text-teal-200 mb-3">
+                  {card.topic} · Answer — click to flip back
+                </span>
+                <p className="text-xl md:text-2xl font-medium text-white text-center leading-relaxed">
+                  {card.back}
+                </p>
+                {known[card.id] !== undefined && (
+                  <span className={`mt-4 text-xs font-semibold px-3 py-1 rounded-full ${known[card.id] ? "bg-green-900 text-green-200" : "bg-amber-900 text-amber-200"}`}>
+                    {known[card.id] ? "Known" : "Still learning"}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+        </div>
 
         {/* Know / Don't know */}
         <div className="flex justify-center gap-3 mt-4">
