@@ -492,6 +492,7 @@ export const SpeechProvider = ({ children }) => {
         setLoading, // Expose setLoading function
         setMessages, // Expose setMessages function
         currentImages, // Expose current images
+        setCurrentImages, // Expose setter to hide the images panel
         lastUserMessage, // Expose last user message from voice recording
         setLastUserMessage, // Expose setter for last user message
         selectedLanguage, // Expose selected language

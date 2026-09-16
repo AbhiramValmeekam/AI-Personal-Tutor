@@ -23,10 +23,10 @@ const cleanCaption = (text) => {
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3002";
 
-export const ChatInterface = ({ hidden, ...props }) => {
+export const ChatInterface = ({ hidden, onSessionChange, ...props }) => {
   const input = useRef();
   const fileInput = useRef();
-  const { tts, loading, message, startRecording, stopRecording, recording, currentMessageText, displayedCaptionText, stopAudio, messages, currentImages, lastUserMessage, setLastUserMessage, selectedLanguage, setSelectedLanguage } = useSpeech();
+  const { tts, loading, message, startRecording, stopRecording, recording, currentMessageText, displayedCaptionText, stopAudio, messages, currentImages, setCurrentImages, lastUserMessage, setLastUserMessage, selectedLanguage, setSelectedLanguage } = useSpeech();
 
   // Auth state
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('adam_token'));
@@ -90,6 +90,137 @@ export const ChatInterface = ({ hidden, ...props }) => {
   };
 
   const [chatHistory, setChatHistory] = useState([]); // Store all messages in order
+
+  // ─── ChatGPT-style sessions (persisted in MongoDB per user) ───
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const loadingSessionRef = useRef(false);
+  const saveTimerRef = useRef(null);
+  const chatHistoryRef = useRef([]);
+  chatHistoryRef.current = chatHistory;
+
+  const authHeaders = () => {
+    const token = localStorage.getItem('adam_token');
+    return token
+      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      : { 'Content-Type': 'application/json' };
+  };
+
+  const toUiMessages = (msgs) =>
+    (msgs || []).filter((m) => m && m.text).map((m) => ({
+      id: Date.now() + Math.random(),
+      text: m.text,
+      sender: m.sender,
+      timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+    }));
+
+  const toApiMessages = (msgs) =>
+    (msgs || []).filter((m) => m && m.text && ['user', 'ai', 'system'].includes(m.sender))
+      .map((m) => ({ text: m.text, sender: m.sender, timestamp: m.timestamp || new Date() }));
+
+  const loadSessions = async (openSessionId = null) => {
+    if (!localStorage.getItem('adam_token')) return;
+    setSessionsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const list = data.sessions || [];
+      setSessions(list);
+      const targetId = openSessionId || list[0]?._id || null;
+      if (targetId) {
+        await openSession(targetId, list);
+      } else {
+        await handleNewChat(true);
+      }
+    } catch (e) {
+      console.error('Failed to load sessions:', e);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const openSession = async (id, knownList = null) => {
+    // Stop any in-progress speech before switching chats
+    try { stopAudio(); } catch (e) { /* noop */ }
+    try { if (recording) stopRecording(); } catch (e) { /* noop */ }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setLastUserMessage("");
+    setCurrentImages([]);
+    setIsRetentionTestOpen(false);
+    setIsFlashcardsOpen(false);
+    loadingSessionRef.current = true;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${id}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setActiveSessionId(data.session._id);
+      setChatHistory(toUiMessages(data.session.messages));
+      const list = knownList || sessions;
+      const found = list.find((s) => s._id === id);
+      if (!found) setSessions((prev) => [{ _id: data.session._id, title: data.session.title, updatedAt: data.session.updatedAt }, ...prev]);
+    } catch (e) {
+      console.error('Failed to open session:', e);
+      showToast('Could not load that chat.');
+    } finally {
+      loadingSessionRef.current = false;
+    }
+  };
+
+  const handleNewChat = async (silent = false) => {
+    // Stop any in-progress speech — New chat cuts the avatar off mid-sentence
+    try { stopAudio(); } catch (e) { /* noop */ }
+    try { if (recording) stopRecording(); } catch (e) { /* noop */ }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setLastUserMessage("");
+    setCurrentImages([]);
+    setIsRetentionTestOpen(false);
+    setIsFlashcardsOpen(false);
+    if (!localStorage.getItem('adam_token')) {
+      setChatHistory([]);
+      setActiveSessionId(null);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ title: 'New chat' }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      loadingSessionRef.current = true;
+      setActiveSessionId(data.session._id);
+      setChatHistory([]);
+      setSessions((prev) => [{ _id: data.session._id, title: data.session.title, createdAt: data.session.createdAt, updatedAt: data.session.updatedAt, messageCount: 0 }, ...prev]);
+      loadingSessionRef.current = false;
+    } catch (e) {
+      console.error('Failed to create session:', e);
+      if (!silent) showToast('Could not start a new chat.');
+    }
+  };
+
+  const handleDeleteSession = async (id, e) => {
+    if (e) e.stopPropagation();
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSessions((prev) => prev.filter((s) => s._id !== id));
+      if (id === activeSessionId) {
+        const remaining = sessions.filter((s) => s._id !== id);
+        if (remaining.length > 0) await openSession(remaining[0]._id);
+        else await handleNewChat(true);
+      }
+      showToast('Chat deleted.');
+    } catch (err) {
+      console.error('Delete session error:', err);
+      showToast('Could not delete that chat.');
+    }
+  };
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [documents, setDocuments] = useState([]); // Store uploaded documents
   const [isUploading, setIsUploading] = useState(false); // Track upload status
@@ -97,6 +228,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
   const [chatSummary, setChatSummary] = useState(""); // Store chat summary
   const [isRetentionTestOpen, setIsRetentionTestOpen] = useState(false); // Track retention test modal state
   const [isFlashcardsOpen, setIsFlashcardsOpen] = useState(false); // Track flashcards modal state
+  const [hiddenImages, setHiddenImages] = useState([]); // Stashed images after panel is closed
   const [zoomedImage, setZoomedImage] = useState(null); // Track which image is zoomed
   const [toast, setToast] = useState(""); // Toast notification message
   const toastTimer = useRef(null);
@@ -127,6 +259,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
   // Debug: Log when currentImages changes
   useEffect(() => {
     console.log("Current images updated:", currentImages);
+    if (currentImages && currentImages.length > 0) setHiddenImages([]); // fresh deck, drop stash
   }, [currentImages]);
 
   // Handle escape key to close zoomed image
@@ -140,8 +273,50 @@ export const ChatInterface = ({ hidden, ...props }) => {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [zoomedImage]);
 
-  // Chat history is temporary - cleared on page reload
-  // No localStorage persistence
+  // ChatGPT-style: load sessions on login, autosave messages to MongoDB
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadSessions();
+    } else {
+      setSessions([]);
+      setActiveSessionId(null);
+      setChatHistory([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn]);
+
+  // Autosave chatHistory → PUT /api/sessions/:id (debounced, skips session switches)
+  useEffect(() => {
+    if (!isLoggedIn || !activeSessionId || loadingSessionRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const msgs = toApiMessages(chatHistoryRef.current);
+        // Auto-title from first user message, ChatGPT-style
+        const firstUser = msgs.find((m) => m.sender === 'user');
+        const current = sessions.find((s) => s._id === activeSessionId);
+        const needsTitle = current && (!current.title || current.title === 'New chat') && firstUser;
+        const title = needsTitle ? firstUser.text.slice(0, 40) : undefined;
+        const res = await fetch(`${API_BASE_URL}/api/sessions/${activeSessionId}`, {
+          method: 'PUT',
+          headers: authHeaders(),
+          body: JSON.stringify(title ? { messages: msgs, title } : { messages: msgs }),
+        });
+        if (res.ok && title) {
+          setSessions((prev) => prev.map((s) => (s._id === activeSessionId ? { ...s, title } : s)));
+        }
+      } catch (e) {
+        console.error('Autosave session failed:', e);
+      }
+    }, 800);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatHistory, activeSessionId, isLoggedIn]);
+
+  // Tell App to remount the avatar scene whenever the session changes
+  useEffect(() => {
+    if (onSessionChange) onSessionChange(activeSessionId || 'local');
+  }, [activeSessionId, onSessionChange]);
 
   // Handle incoming AI messages from single message object
   useEffect(() => {
@@ -516,7 +691,7 @@ export const ChatInterface = ({ hidden, ...props }) => {
         <div className="absolute left-0 top-0 h-full bg-gray-900 pointer-events-auto z-40 w-1/4 min-w-[320px] max-w-[400px] flex flex-col shadow-2xl border-r border-gray-700">
           {/* Header Section - Fixed */}
           <div className="flex-shrink-0 p-4 border-b border-gray-600 bg-gray-800">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-3">
               <h2 className="text-xl font-bold text-white">Conversation</h2>
               <button
                 onClick={() => setIsChatOpen(false)}
@@ -538,6 +713,45 @@ export const ChatInterface = ({ hidden, ...props }) => {
                 </svg>
               </button>
             </div>
+
+            {/* New Chat + Previous Chats (ChatGPT-style, stored in MongoDB) */}
+            {isLoggedIn && (
+              <div className="mb-3">
+                <button
+                  onClick={() => handleNewChat()}
+                  className="w-full bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold p-2 rounded-lg transition-all flex items-center justify-center gap-2"
+                >
+                  <span className="text-lg leading-none">+</span> New chat
+                </button>
+                <div className="mt-2 max-h-[160px] overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                  {sessionsLoading && (
+                    <p className="text-gray-400 text-xs text-center py-2">Loading chats…</p>
+                  )}
+                  {!sessionsLoading && sessions.length === 0 && (
+                    <p className="text-gray-400 text-xs text-center py-2">No previous chats yet.</p>
+                  )}
+                  {sessions.map((s) => (
+                    <div
+                      key={s._id}
+                      onClick={() => { if (s._id !== activeSessionId) openSession(s._id); }}
+                      className={`group flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer transition-all ${s._id === activeSessionId ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-700/60'}`}
+                      title={s.title}
+                    >
+                      <span className="truncate flex-1">{s.title || 'New chat'}</span>
+                      <button
+                        onClick={(e) => handleDeleteSession(s._id, e)}
+                        className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all flex-shrink-0"
+                        title="Delete chat"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Summarize Chat Button */}
             {chatHistory.length > 0 && (
@@ -677,25 +891,63 @@ export const ChatInterface = ({ hidden, ...props }) => {
         </div>
 
 
-        {/* Retention Test Modal */}
+        {/* Retention Test Modal — keyed to active session so quiz always builds from current chat */}
         {isRetentionTestOpen && (
           <RetentionTest
+            key={`quiz-${activeSessionId || 'local'}`}
             chatHistory={chatHistory}
             onClose={() => setIsRetentionTestOpen(false)}
           />
         )}
 
-        {/* Flashcards Modal */}
+        {/* Flashcards Modal — keyed to active session so deck always builds from current chat */}
         {isFlashcardsOpen && (
           <Flashcards
+            key={`flash-${activeSessionId || 'local'}`}
             chatHistory={chatHistory}
             onClose={() => setIsFlashcardsOpen(false)}
           />
         )}
 
-        {/* Images Display Section - Middle Right, won't overlap controls */}
+        {/* Restore hidden images */}
+      {hiddenImages.length > 0 && (!currentImages || currentImages.length === 0) && (
+        <button
+          onClick={() => { setCurrentImages(hiddenImages); setHiddenImages([]); }}
+          title="Show images"
+          className="absolute right-4 top-32 bg-black bg-opacity-50 backdrop-blur-md text-white p-3 rounded-lg pointer-events-auto z-20 hover:bg-opacity-70 transition-all"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            className="w-6 h-6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* Images Display Section - Middle Right, won't overlap controls */}
         {currentImages && currentImages.length > 0 && (
           <div className="absolute right-4 top-32 bg-black bg-opacity-50 backdrop-blur-md p-4 rounded-lg pointer-events-auto z-10" style={{ maxWidth: '350px', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-white text-sm font-semibold">Related images</span>
+              <button
+                onClick={() => { setHiddenImages(currentImages); setCurrentImages([]); }}
+                title="Hide images"
+                className="text-gray-300 hover:text-white bg-white bg-opacity-10 hover:bg-opacity-20 rounded-full p-1 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
             <div className="flex flex-col gap-3">
               {currentImages.map((imageData, index) => {
                 // Handle both old format (just URL string) and new format (object with url and label)

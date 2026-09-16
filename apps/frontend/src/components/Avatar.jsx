@@ -510,7 +510,7 @@ export function Avatar(props) {
   }, []);
 
   return (
-    <group {...props} dispose={null} ref={group} position={[0, -0.5, 0]}>
+    <group {...props} dispose={null} ref={group} position={[0, 0, 0]} scale={[0.75, 0.75, 0.75]}>
       <primitive object={nodes.Hips} />
       <skinnedMesh
         name="EyeLeft"

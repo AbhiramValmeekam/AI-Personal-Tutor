@@ -86,11 +86,52 @@ const userSchema = new mongoose.Schema(
 
 const User = mongoose.model("User", userSchema);
 
+// ─── Chat Session Model (ChatGPT-style history) ─────────────────────────────
+const chatMessageSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true },
+    sender: { type: String, required: true, enum: ["user", "ai", "system"] },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
+const chatSessionSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    title: { type: String, default: "New chat", trim: true },
+    messages: { type: [chatMessageSchema], default: [] },
+  },
+  { timestamps: true }
+);
+
+const ChatSession = mongoose.model("ChatSession", chatSessionSchema);
+
 // ─── JWT Helper ───────────────────────────────────────────────────────────────
 const signToken = (userId) =>
   jwt.sign({ id: userId }, process.env.JWT_SECRET || "fallback_secret", {
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   });
+
+// ─── Auth Middleware (protects session routes) ──────────────────────────────
+const authenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "No token provided" });
+    }
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_secret");
+    const user = await User.findById(decoded.id).select("_id");
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+    req.userId = user._id;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+};
 
 const responseCache = new Map();
 const CACHE_TTL = 0; // Cache disabled - always generate fresh responses
@@ -222,6 +263,100 @@ app.get("/auth/verify", async (req, res) => {
     res.json({ valid: true, user: { id: user._id, name: user.name, email: user.email } });
   } catch (err) {
     res.status(401).json({ error: "Invalid or expired token" });
+  }
+});
+
+// ─── Chat Session Routes (ChatGPT-style history, per user) ─────────────────
+
+// GET /api/sessions — list my sessions (newest first, without message bodies)
+app.get("/api/sessions", authenticate, async (req, res) => {
+  try {
+    const sessions = await ChatSession.find({ userId: req.userId })
+      .select("title createdAt updatedAt")
+      .sort({ updatedAt: -1 })
+      .lean();
+    const withCounts = await Promise.all(
+      sessions.map(async (s) => {
+        const messageCount = await ChatSession.aggregate([
+          { $match: { _id: s._id } },
+          { $project: { messageCount: { $size: "$messages" } } },
+        ]);
+        return { ...s, messageCount: messageCount[0]?.messageCount || 0 };
+      })
+    );
+    res.json({ sessions: withCounts });
+  } catch (err) {
+    console.error("List sessions error:", err);
+    res.status(500).json({ error: "Failed to load sessions" });
+  }
+});
+
+// POST /api/sessions — create a session
+app.post("/api/sessions", authenticate, async (req, res) => {
+  try {
+    const { title, messages } = req.body;
+    const cleanMessages = Array.isArray(messages)
+      ? messages.filter((m) => m && m.text && ["user", "ai", "system"].includes(m.sender))
+      : [];
+    const session = await ChatSession.create({
+      userId: req.userId,
+      title: (title || "New chat").slice(0, 80),
+      messages: cleanMessages,
+    });
+    res.status(201).json({ session });
+  } catch (err) {
+    console.error("Create session error:", err);
+    res.status(500).json({ error: "Failed to create session" });
+  }
+});
+
+// GET /api/sessions/:id — load one session (owner only)
+app.get("/api/sessions/:id", authenticate, async (req, res) => {
+  try {
+    const session = await ChatSession.findOne({ _id: req.params.id, userId: req.userId });
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+    res.json({ session });
+  } catch (err) {
+    console.error("Get session error:", err);
+    res.status(500).json({ error: "Failed to load session" });
+  }
+});
+
+// PUT /api/sessions/:id — replace messages (autosave), refresh title
+app.put("/api/sessions/:id", authenticate, async (req, res) => {
+  try {
+    const { messages, title } = req.body;
+    const session = await ChatSession.findOne({ _id: req.params.id, userId: req.userId });
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+    if (Array.isArray(messages)) {
+      session.messages = messages.filter((m) => m && m.text && ["user", "ai", "system"].includes(m.sender));
+    }
+    if (typeof title === "string" && title.trim()) {
+      session.title = title.slice(0, 80);
+    }
+    await session.save();
+    res.json({ session: { _id: session._id, title: session.title, updatedAt: session.updatedAt } });
+  } catch (err) {
+    console.error("Save session error:", err);
+    res.status(500).json({ error: "Failed to save session" });
+  }
+});
+
+// DELETE /api/sessions/:id — delete a session (owner only)
+app.delete("/api/sessions/:id", authenticate, async (req, res) => {
+  try {
+    const result = await ChatSession.deleteOne({ _id: req.params.id, userId: req.userId });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+    res.json({ message: "Session deleted" });
+  } catch (err) {
+    console.error("Delete session error:", err);
+    res.status(500).json({ error: "Failed to delete session" });
   }
 });
 
